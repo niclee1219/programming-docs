@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Programming - AGM</title>
+
+    <!-- Brand Favicon Link -->
+    <link rel="icon" type="image/png" href="/static/favicon.png" />
+
+    <!-- Premium Google Font (Outfit) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Custom Style Sheet -->
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <!-- PREMIUM WELCOME SPLASH SCREEN -->
+    <div id="welcome-splash" class="welcome-splash">
+      <div class="splash-content">
+        <div class="splash-logo-wrapper">
+          <img
+            src="/static/logo_white.png"
+            id="splash-logo"
+            class="splash-logo"
+            alt="AGM Logo"
+          />
+        </div>
+        <div class="splash-loader-bar">
+          <div class="splash-loader-fill"></div>
+        </div>
+        <div class="splash-brand-text">Internal Portal</div>
+      </div>
+    </div>
+    <script>
+      // Inline script to set variables instantly before render to prevent asset flash
+      (function () {
+        const savedTheme = localStorage.getItem("theme");
+        const isLight = savedTheme === "light";
+        if (isLight) {
+          document.body.classList.add("light-theme");
+        } else {
+          document.body.classList.remove("light-theme");
+        }
+        const logo = document.getElementById("splash-logo");
+        if (logo) {
+          logo.src = isLight
+            ? "/static/logo_black.png"
+            : "/static/logo_white.png";
+        }
+      })();
+    </script>
+
+    <div class="app-container">
+      <!-- TOP TOOLBAR -->
+      <header class="top-toolbar">
+        <div class="brand-section">
+          <!-- Collapsible Sidebar Trigger -->
+          <button
+            id="btn-toggle-sidebar"
+            class="btn-icon-only"
+            title="Toggle Sidebar"
+          >
+            <i data-lucide="menu"></i>
+          </button>
+
+          <!-- Vertically Stacked Brand Header -->
+          <div class="brand-logo-container">
+            <div class="logo-wrapper">
+              <img
+                src="/static/logo_white.png"
+                id="app-logo"
+                class="logo-img"
+                alt="Logo"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-bar">
+          <div class="input-group">
+            <label for="xlsm-folder"
+              ><i data-lucide="folder-open"></i> XLSM Folder</label
+            >
+            <div class="picker-input">
+              <input
+                type="text"
+                id="xlsm-folder"
+                placeholder="No folder selected"
+                readonly
+              />
+              <button
+                id="btn-browse-xlsm"
+                class="btn-picker"
+                title="Pick folder from local disk"
+              >
+                <i data-lucide="folder"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Aligned Scan Column with Subtle Theme Switcher Above Scan Button -->
+          <div class="scan-column">
+            <button
+              id="btn-theme-toggle"
+              class="btn-theme-subtle"
+              title="Toggle Light/Dark Theme"
+            >
+              <i data-lucide="sun"></i>
+              <span class="theme-label">Light Mode</span>
+            </button>
+            <button id="btn-scan" class="btn-primary">
+              <i data-lucide="search"></i> Scan Folder
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- MAIN WORKSPACE -->
+      <main class="main-workspace" id="main-workspace">
+        <!-- SIDEBAR: COMPANY LIST -->
+        <section class="sidebar-pane" id="sidebar-pane">
+          <div class="pane-header">
+            <div class="search-mode-toggle">
+              <button
+                id="btn-mode-companies"
+                class="mode-toggle-btn active"
+                title="Search Companies"
+              >
+                <i data-lucide="building"></i> Companies
+              </button>
+              <button
+                id="btn-mode-people"
+                class="mode-toggle-btn"
+                title="Search People/Directors"
+              >
+                <i data-lucide="users"></i> People
+              </button>
+            </div>
+            <div class="search-box">
+              <i data-lucide="search" class="search-icon"></i>
+              <input
+                type="text"
+                id="search-filter"
+                placeholder="Filter companies by name..."
+              />
+            </div>
+          </div>
+
+          <div class="selection-actions">
+            <button id="btn-select-all" class="btn-link">Select All</button>
+            <span class="separator">|</span>
+            <button id="btn-deselect-all" class="btn-link">Deselect All</button>
+            <div id="company-count" class="company-count">
+              0 organisations selected
+            </div>
+          </div>
+
+          <div class="company-list-wrapper">
+            <ul id="company-list" class="company-list">
+              <!-- Loaded dynamically -->
+              <div class="empty-list-placeholder">
+                <i data-lucide="folder-search" class="placeholder-icon"></i>
+                <p>
+                  Click <b>Scan Folder</b> and pick your local XLSM folder.
+                  Files are read directly from your disk — nothing is uploaded.
+                </p>
+              </div>
+            </ul>
+          </div>
+        </section>
+
+        <!-- DETAIL & SHEET WORKSPACE -->
+        <section class="content-pane">
+          <!-- WORKSPACE TABS -->
+          <div class="workspace-tabs-header">
+            <div class="tabs-buttons">
+              <button
+                class="tab-btn active"
+                data-tab="overview-tab"
+                id="btn-tab-overview"
+              >
+                <i data-lucide="eye"></i> Overview
+              </button>
+              <button
+                class="tab-btn"
+                data-tab="details-tab"
+                id="btn-tab-details"
+              >
+                <i data-lucide="file-edit"></i> Form Editor
+              </button>
+            </div>
+
+            <div class="tab-actions">
+              <button
+                id="btn-toggle-preview"
+                class="btn-secondary"
+                title="Toggle Live Preview"
+              >
+                <i data-lucide="eye"></i> Live Preview
+              </button>
+            </div>
+          </div>
+
+          <!-- TAB CONTENTS -->
+          <div class="tab-content-container">
+            <!-- OVERVIEW TAB -->
+            <div id="overview-tab" class="tab-pane active">
+              <div
+                id="overview-view"
+                class="details-layout"
+                style="display: none"
+              >
+                <div class="form-card card-m3">
+                  <div class="card-header">
+                    <h3><i data-lucide="building"></i> Company Overview</h3>
+                  </div>
+
+                  <div class="overview-grid">
+                    <div class="overview-item">
+                      <span class="overview-label">Company Name</span>
+                      <div class="overview-value" id="overview-company-name">
+                        -
+                      </div>
+                    </div>
+
+                    <div class="overview-item">
+                      <span class="overview-label">Registration No (UEN)</span>
+                      <div class="overview-value" id="overview-reg-no">-</div>
+                    </div>
+
+                    <div class="overview-item">
+                      <span class="overview-label">Financial Year End</span>
+                      <div class="overview-value" id="overview-fy-end">-</div>
+                    </div>
+
+                    <div class="overview-item">
+                      <span class="overview-label">AGM Meeting Address</span>
+                      <div class="overview-value" id="overview-address">-</div>
+                    </div>
+
+                    <div class="overview-item">
+                      <span class="overview-label">AGM Number</span>
+                      <div class="overview-value" id="overview-agm-number">
+                        -
+                      </div>
+                    </div>
+
+                    <div class="overview-item">
+                      <span class="overview-label">AGM Meeting Date</span>
+                      <div class="overview-value" id="overview-agm-date">-</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ACTIVE SIGNATORIES -->
+                <div class="form-card card-m3">
+                  <div class="card-header">
+                    <h3><i data-lucide="users"></i> Active Signatories</h3>
+                  </div>
+                  <div
+                    id="overview-directors-list"
+                    class="overview-directors-list"
+                  >
+                    <!-- Populated dynamically -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- EMPTY OVERVIEW VIEW -->
+              <div id="overview-empty-view" class="details-empty">
+                <i data-lucide="mouse-pointer-click" class="empty-icon"></i>
+                <h2>No Company Selected</h2>
+                <p>
+                  Select a company from the left panel to review its overview.
+                </p>
+              </div>
+            </div>
+
+            <!-- DETAILS TAB (FORM EDITOR) -->
+            <div id="details-tab" class="tab-pane">
+              <div
+                id="details-view"
+                class="details-layout"
+                style="display: none"
+              >
+                <div class="form-card card-m3">
+                  <div class="card-header">
+                    <h3><i data-lucide="building"></i> Company Information</h3>
+                    <div class="card-header-actions">
+                      <div
+                        id="ordinal-badge"
+                        class="ordinal-badge"
+                        style="display: none"
+                      >
+                        <span id="ordinal-text">First AGM</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="form-grid">
+                    <div class="form-field full-width">
+                      <label for="company-name">Company Name</label>
+                      <input
+                        type="text"
+                        id="company-name"
+                        placeholder="Enter Company Name"
+                      />
+                    </div>
+
+                    <div class="form-field">
+                      <label for="reg-no">Registration No (UEN)</label>
+                      <input
+                        type="text"
+                        id="reg-no"
+                        placeholder="e.g. 201706747R"
+                      />
+                    </div>
+
+                    <div class="form-field">
+                      <label for="financial-year-end">Financial Year End</label>
+                      <input
+                        type="text"
+                        id="financial-year-end"
+                        placeholder="e.g. 31 December 2026"
+                      />
+                    </div>
+
+                    <div class="form-field full-width">
+                      <label for="address">AGM Meeting Address</label>
+                      <input
+                        type="text"
+                        id="address"
+                        placeholder="Enter Address"
+                      />
+                    </div>
+
+                    <div class="form-field">
+                      <label for="agm-number">AGM Number (ordinal index)</label>
+                      <input
+                        type="number"
+                        id="agm-number"
+                        placeholder="e.g. 6"
+                      />
+                    </div>
+
+                    <div class="form-field datepicker-field">
+                      <label for="agm-date">AGM Meeting Date</label>
+                      <div class="datepicker-container">
+                        <!-- Readonly visual string display of formatted date -->
+                        <input
+                          type="text"
+                          id="agm-date"
+                          placeholder="e.g. 1 June 2027"
+                          readonly
+                          class="datepicker-trigger"
+                        />
+                        <!-- Hidden native HTML date input used as datepicker -->
+                        <input
+                          type="date"
+                          id="agm-date-picker"
+                          class="hidden-datepicker"
+                        />
+                        <i data-lucide="calendar" class="datepicker-icon"></i>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- DIRECTORS SECTION (Checkbox List) -->
+                <div class="form-card card-m3">
+                  <div class="card-header">
+                    <h3><i data-lucide="users"></i> Board of Directors</h3>
+                    <div class="card-header-actions">
+                      <button id="btn-history-rotation" class="btn-info">
+                        <i data-lucide="clipboard-list"></i> History & Rotation
+                      </button>
+                    </div>
+                  </div>
+
+                  <div id="directors-list" class="directors-list">
+                    <!-- Directors checkboxes will load here dynamically -->
+                  </div>
+                </div>
+
+                <!-- NOTES / WARNINGS BOX -->
+                <div id="warnings-box" class="warnings-box">
+                  <div class="warning-header">
+                    <i data-lucide="alert-triangle" class="warning-icon"></i>
+                    <h4>Warnings & Integrity Checks</h4>
+                  </div>
+                  <ul id="warnings-list" class="warnings-list">
+                    <!-- Warnings will load here -->
+                  </ul>
+                </div>
+
+                <!-- ACTION BAR -->
+                <div class="details-action-bar">
+                  <button id="btn-reread" class="btn-secondary">
+                    <i data-lucide="rotate-ccw"></i> Re-read from XLSM
+                  </button>
+                  <button id="btn-save" class="btn-primary">
+                    <i data-lucide="save"></i> Save Company Edits
+                  </button>
+                </div>
+              </div>
+
+              <!-- EMPTY DETAILS VIEW -->
+              <div id="details-empty-view" class="details-empty">
+                <i data-lucide="mouse-pointer-click" class="empty-icon"></i>
+                <h2>No Company Selected</h2>
+                <p>
+                  Select a company from the left panel to review details, view
+                  spreadsheet tabs, or edit fields.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- LIVE DOCUMENT PREVIEW SIDEBAR (RIGHT) -->
+        <aside id="preview-sidebar" class="preview-sidebar collapsed">
+          <div class="preview-header">
+            <h3><i data-lucide="eye"></i> Resolution Preview</h3>
+            <button
+              id="btn-close-preview"
+              class="btn-icon-only"
+              title="Close Preview"
+            >
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <div class="preview-body">
+            <div class="preview-sheet-container">
+              <!-- Dynamic rendered resolution sheet -->
+              <div id="preview-document" class="preview-document">
+                <div class="preview-empty-state">
+                  <i data-lucide="file-text"></i>
+                  <p>Select a company to load resolution document preview.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </main>
+
+      <!-- BOTTOM CONTROL TOOLBAR -->
+      <footer class="bottom-toolbar">
+        <div class="status-indicator">
+          <i data-lucide="info" class="status-icon"></i>
+          <span id="status-text">Ready.</span>
+        </div>
+
+        <div class="generation-controls">
+          <!-- Parsing Progress Indicator -->
+          <div
+            id="parsing-progress-container"
+            class="progress-container"
+            style="display: none; margin-right: 12px"
+          >
+            <div class="progress-bar-wrapper">
+              <div
+                id="parsing-progress"
+                class="progress-bar-fill"
+                style="width: 0%"
+              ></div>
+            </div>
+            <span id="parsing-progress-text" class="progress-text"
+              >Loading... 0/0</span
+            >
+          </div>
+
+          <!-- Generation Progress Indicator -->
+          <div
+            id="generation-progress-container"
+            class="progress-container"
+            style="display: none"
+          >
+            <div class="progress-bar-wrapper">
+              <div id="generation-progress" class="progress-bar-fill"></div>
+            </div>
+            <span id="progress-text" class="progress-text"
+              >Generating 0/0...</span
+            >
+          </div>
+
+          <button id="btn-generate" class="btn-primary" disabled>
+            <i data-lucide="zap"></i> Generate Selected Documents
+          </button>
+        </div>
+      </footer>
+    </div>
+
+    <!-- DIRECTOR ROTATION HISTORY MODAL -->
+    <div id="history-modal" class="modal-overlay" style="display: none">
+      <div class="modal-content modal-m3">
+        <div class="modal-header">
+          <h3>
+            <i data-lucide="history"></i> Director History & Rotation Summary
+          </h3>
+          <button id="btn-close-modal" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="company-meta-header">
+            <h4 id="history-company-name">-</h4>
+            <p>
+              UEN: <span id="history-company-uen">-</span> | Planning Year:
+              <span id="history-planning-year">-</span>
+            </p>
+          </div>
+
+          <div
+            id="history-loading"
+            class="history-loader"
+            style="display: none"
+          >
+            <div class="spinner"></div>
+            <p>Fetching history records...</p>
+          </div>
+
+          <div id="history-table-container" class="history-table-wrapper">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>Director</th>
+                  <th>Years Served</th>
+                  <th>Consecutive Count</th>
+                  <th>Rotation Assessment</th>
+                </tr>
+              </thead>
+              <tbody id="history-table-body">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="rotation-disclaimer">
+            <i data-lucide="alert-circle" class="disclaimer-icon"></i>
+            <p>
+              <b>Rotation guideline:</b> Directors who have served 3 or more
+              consecutive financial years are highlighted with
+              <b>"Rotate?"</b> and might require rotation at the upcoming AGM.
+            </p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-confirm-close" class="btn-primary">
+            Close History
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SheetJS — browser-side XLSM parsing (files never leave the local disk) -->
+    <script src="/static/xlsx.full.min.js"></script>
+
+    <!-- Application Javascript Logic -->
+    <script src="/static/app.js"></script>
+    <script>
+      // Initialize lucide icons at load
+      lucide.createIcons();
+    </script>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Floating Company Tooltip Popup -->
+    <div
+      id="company-tooltip"
+      class="company-tooltip"
+      style="display: none"
+    ></div>
+  </body>
+</html>
