@@ -23,6 +23,29 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
+    <!-- LOGIN OVERLAY -->
+    <div id="login-overlay" class="login-overlay" style="display:none">
+      <div class="login-card">
+        <div class="login-logo-wrapper">
+          <img src="/static/logo_white.png" id="login-logo" class="login-logo" alt="AGM Logo" />
+        </div>
+        <p class="login-subtitle">Internal Portal</p>
+        <div class="login-form">
+          <input
+            type="password"
+            id="login-code-input"
+            class="login-input"
+            placeholder="Enter access code"
+            autocomplete="off"
+          />
+          <button id="btn-login" class="btn-primary login-btn">Sign In</button>
+          <p id="login-error" class="login-error" style="display:none">
+            Incorrect code — please try again.
+          </p>
+        </div>
+      </div>
+    </div>
+
     <!-- PREMIUM WELCOME SPLASH SCREEN -->
     <div id="welcome-splash" class="welcome-splash">
       <div class="splash-content">
@@ -52,9 +75,11 @@
         }
         const logo = document.getElementById("splash-logo");
         if (logo) {
-          logo.src = isLight
-            ? "/static/logo_black.png"
-            : "/static/logo_white.png";
+          logo.src = isLight ? "/static/logo_black.png" : "/static/logo_white.png";
+        }
+        const loginLogo = document.getElementById("login-logo");
+        if (loginLogo) {
+          loginLogo.src = isLight ? "/static/logo_black.png" : "/static/logo_white.png";
         }
       })();
     </script>
@@ -567,6 +592,73 @@
     <script>
       // Initialize lucide icons at load
       lucide.createIcons();
+    </script>
+
+    <!-- Auth gate -->
+    <script>
+      (function () {
+        const overlay = document.getElementById("login-overlay");
+        const input = document.getElementById("login-code-input");
+        const btn = document.getElementById("btn-login");
+        const errMsg = document.getElementById("login-error");
+
+        function showOverlay() {
+          overlay.style.display = "flex";
+          setTimeout(() => input.focus(), 50);
+        }
+
+        function hideOverlay() {
+          overlay.style.opacity = "0";
+          overlay.style.transition = "opacity 0.3s ease";
+          setTimeout(() => { overlay.style.display = "none"; }, 300);
+        }
+
+        async function attemptLogin() {
+          const code = input.value.trim();
+          if (!code) return;
+          btn.disabled = true;
+          errMsg.style.display = "none";
+          try {
+            const res = await fetch("/api/auth", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ code }),
+            });
+            if (res.ok) {
+              hideOverlay();
+            } else {
+              errMsg.style.display = "block";
+              input.value = "";
+              input.focus();
+            }
+          } catch (e) {
+            errMsg.textContent = "Network error — please try again.";
+            errMsg.style.display = "block";
+          }
+          btn.disabled = false;
+        }
+
+        btn.addEventListener("click", attemptLogin);
+        input.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") attemptLogin();
+        });
+
+        // Handle 401s from any future API call — re-show login
+        const _origFetch = window.fetch;
+        window.fetch = async function (...args) {
+          const res = await _origFetch(...args);
+          if (res.status === 401 && !args[0].toString().includes("/api/auth")) {
+            showOverlay();
+          }
+          return res;
+        };
+
+        // Check auth on load
+        fetch("/api/auth/check")
+          .then((r) => r.json())
+          .then((d) => { if (!d.authenticated) showOverlay(); })
+          .catch(() => showOverlay());
+      })();
     </script>
 
     <!-- Toast Notification Container -->

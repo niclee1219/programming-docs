@@ -629,7 +629,7 @@ async function pickFolder() {
         return;
     }
     try {
-        state.dirHandle = await window.showDirectoryPicker();
+        state.dirHandle = await window.showDirectoryPicker({ mode: 'read' });
         el.xlsmFolder.value = state.dirHandle.name;
         showStatus(`Folder "${state.dirHandle.name}" selected.`, 'success');
         await scanFolder();

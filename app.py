@@ -12,11 +12,12 @@ import json
 import os
 import re
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
+from functools import wraps
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, jsonify, render_template, request, send_file, session
 
 from models import db, UserSettings, FieldMapping, DirectorHistoryEntry
 from generator import AGMGenerator
@@ -32,11 +33,23 @@ if _db_url.startswith("postgres://"):
 app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 db.init_app(app)
 
 with app.app_context():
     db.create_all()
+
+
+def _require_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("authenticated"):
+            return jsonify({"error": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated
 
 
 def _user_id() -> str:
@@ -54,7 +67,32 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/auth", methods=["POST"])
+def login():
+    login_code = os.environ.get("LOGIN_CODE", "")
+    if not login_code:
+        return jsonify({"error": "LOGIN_CODE not configured on server"}), 500
+    submitted = (request.json or {}).get("code", "").strip()
+    if submitted == login_code:
+        session.permanent = True
+        session["authenticated"] = True
+        return jsonify({"success": True})
+    return jsonify({"error": "Invalid code"}), 401
+
+
+@app.route("/api/auth/check", methods=["GET"])
+def auth_check():
+    return jsonify({"authenticated": bool(session.get("authenticated"))})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"success": True})
+
+
 @app.route("/api/settings", methods=["GET", "POST"])
+@_require_auth
 def manage_settings():
     uid = _user_id()
     if request.method == "GET":
@@ -74,6 +112,7 @@ def manage_settings():
 
 
 @app.route("/api/mappings", methods=["GET", "POST"])
+@_require_auth
 def field_mappings():
     uid = _user_id()
 
@@ -107,6 +146,7 @@ def field_mappings():
 
 
 @app.route("/api/history", methods=["GET"])
+@_require_auth
 def get_director_history():
     uid = _user_id()
     reg_no = request.args.get("reg_no", "").strip()
@@ -128,6 +168,7 @@ def get_director_history():
 
 
 @app.route("/api/generate", methods=["POST"])
+@_require_auth
 def generate_resolutions():
     uid = _user_id()
     payload = request.json or {}

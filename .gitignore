@@ -9,3 +9,4 @@ instance/
 .env.*
 
 CLAUDE.md
+.claude
