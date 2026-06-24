@@ -24,7 +24,7 @@ from history import DirectorHistory
 
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, instance_path="/tmp")
 _db_url = os.environ.get("DATABASE_URL", "sqlite:////tmp/agm.db")
 # Vercel Postgres URLs use postgres:// — SQLAlchemy needs postgresql://
 if _db_url.startswith("postgres://"):
