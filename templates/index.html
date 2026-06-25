@@ -475,7 +475,10 @@
       (async function initClerk() {
         try {
           const clerk = window.Clerk;
-          await clerk.load();
+          await clerk.load({
+            routerPush:    (to) => window.location.assign(to),
+            routerReplace: (to) => window.location.replace(to),
+          });
           window.__clerk = clerk;
 
           if (!clerk.user) {
