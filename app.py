@@ -111,6 +111,7 @@ def index():
     return render_template(
         "index.html",
         clerk_publishable_key=os.environ.get("CLERK_PUBLISHABLE_KEY", ""),
+        clerk_frontend_api=_get_clerk_frontend_api(),
     )
 
 
@@ -195,6 +196,60 @@ def get_director_history():
         return jsonify({"error": f"Error loading history: {e}"}), 500
 
 
+@app.route("/api/profiles", methods=["GET", "POST"])
+@_require_auth
+def company_profiles():
+    org = _org_id()
+
+    if request.method == "GET":
+        reg_no = request.args.get("reg_no", "").strip()
+        doc_type = request.args.get("doc_type", "directors_resolution").strip()
+        if not reg_no:
+            return jsonify({"error": "reg_no is required"}), 400
+        result = _supabase.table("company_profiles") \
+            .select("doc_settings") \
+            .eq("org_id", org) \
+            .eq("reg_no", reg_no) \
+            .maybe_single() \
+            .execute()
+        row = result.data if result else None
+        settings = (row.get("doc_settings") or {}) if row else {}
+        return jsonify({"profile": settings.get(doc_type)})
+
+    else:
+        payload = request.json or {}
+        reg_no = payload.get("reg_no", "").strip()
+        doc_type = payload.get("doc_type", "directors_resolution").strip()
+        profile = payload.get("profile")
+        if not reg_no:
+            return jsonify({"error": "reg_no is required"}), 400
+
+        existing = _supabase.table("company_profiles") \
+            .select("doc_settings") \
+            .eq("org_id", org) \
+            .eq("reg_no", reg_no) \
+            .maybe_single() \
+            .execute()
+        row = existing.data if existing else None
+        settings = (row.get("doc_settings") or {}) if row else {}
+        settings[doc_type] = profile
+
+        _supabase.table("company_profiles") \
+            .upsert(
+                {"org_id": org, "reg_no": reg_no, "doc_settings": settings,
+                 "updated_at": datetime.utcnow().isoformat()},
+                on_conflict="org_id,reg_no",
+            ) \
+            .execute()
+        return jsonify({"success": True})
+
+
+_DOC_TYPE_FILE_SUFFIX = {
+    "directors_resolution": "AGM",
+    "agm_minutes": "AGM_Minutes",
+}
+
+
 @app.route("/api/generate", methods=["POST"])
 @_require_auth
 def generate_resolutions():
@@ -202,6 +257,7 @@ def generate_resolutions():
     payload = request.json or {}
     companies = payload.get("companies", [])
     global_fy_year = payload.get("fy_year", "").strip()
+    doc_types = payload.get("doc_types") or ["directors_resolution"]
 
     if not companies:
         return jsonify({"error": "No companies provided."}), 400
@@ -223,19 +279,31 @@ def generate_resolutions():
 
             display_name = data.get("company_name", "").strip() or item.get("filename", "unknown")
             safe_name = "".join(c for c in display_name if c.isalnum() or c in " _-").strip()[:60]
-            docx_filename = f"{safe_name}_AGM_{fy_year}.docx"
 
-            ok, doc_bytes, msg = generator.generate_to_bytes(data)
-            results.append({
-                "filename": item.get("filename", ""),
-                "company_name": display_name,
-                "success": ok,
-                "message": msg or f"Generated {docx_filename}",
-            })
+            profiles = item.get("profiles") or {}
+            if item.get("profile") is not None and "directors_resolution" not in profiles:
+                profiles["directors_resolution"] = item.get("profile")
 
-            if ok:
-                success_count += 1
-                zf.writestr(docx_filename, doc_bytes)
+            company_generated_any = False
+            for doc_type in doc_types:
+                suffix = _DOC_TYPE_FILE_SUFFIX.get(doc_type, doc_type)
+                docx_filename = f"{safe_name}_{suffix}_{fy_year}.docx"
+                profile = profiles.get(doc_type)
+                ok, doc_bytes, msg = generator.generate_to_bytes(data, profile, doc_type=doc_type)
+                results.append({
+                    "filename": item.get("filename", ""),
+                    "company_name": display_name,
+                    "doc_type": doc_type,
+                    "success": ok,
+                    "message": msg or f"Generated {docx_filename}",
+                })
+
+                if ok:
+                    success_count += 1
+                    company_generated_any = True
+                    zf.writestr(docx_filename, doc_bytes)
+
+            if company_generated_any:
                 reg_no = data.get("reg_no", "").strip()
                 directors = data.get("directors", [])
                 if reg_no and fy_year:

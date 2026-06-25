@@ -178,6 +178,50 @@ function readDirectorsFromSheet(wb) {
     return [];
 }
 
+function readRegisterOfDirectors(wb) {
+    // Find the Register of Directors sheet by name
+    const sheetName = wb.SheetNames.find(n => /register.{0,5}director/i.test(n));
+    if (!sheetName) return null;
+
+    const ws = wb.Sheets[sheetName];
+    if (!ws || !ws['!ref']) return null;
+
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const directors = [];
+
+    for (let r = range.s.r; r < range.e.r; r++) {
+        // Each director: name in col A (0); col H (7) of the SAME row holds the
+        // "Appointed on" label (confirms this is a director block — the actual
+        // appointment date sits in the row below, but for founding directors it's
+        // often free text like "The Day of Incorporation" rather than a real date,
+        // so the label is the reliable marker, not the date's type).
+        const nameCell = ws[XLSX.utils.encode_cell({r, c: 0})];
+        if (!nameCell || !nameCell.v) continue;
+
+        const apptLabelCell = ws[XLSX.utils.encode_cell({r, c: 7})];
+        if (!apptLabelCell || !apptLabelCell.v || !/appoint/i.test(String(apptLabelCell.v))) continue;
+
+        const name = String(nameCell.v).trim();
+        if (!name) continue;
+
+        // Col I (8) of the SAME row holds the cessation reason label ("Resigned on",
+        // "Deceased on", "Disqualified", etc.) when the director has left office —
+        // blank when still active. The date below it is sometimes free text (e.g.
+        // "on 9/3/2022"), so checking for a Date there misses deceased/disqualified
+        // directors entirely; the label's presence is the reliable signal.
+        const ceasedLabelCell = ws[XLSX.utils.encode_cell({r, c: 8})];
+        if (ceasedLabelCell && ceasedLabelCell.v) continue; // ceased — skip
+
+        // Remarks from col J of the name row
+        const remarksCell = ws[XLSX.utils.encode_cell({r, c: 9})];
+        const remarks = (remarksCell && remarksCell.v) ? String(remarksCell.v).trim() : '';
+
+        directors.push({ name, remarks });
+    }
+
+    return directors.length > 0 ? directors : null;
+}
+
 async function extractCompanyData(fileHandle, filename, savedMappings) {
     const file = await fileHandle.getFile();
     const buffer = await file.arrayBuffer();
@@ -257,7 +301,15 @@ async function extractCompanyData(fileHandle, filename, savedMappings) {
         }
     }
 
-    result.directors = readDirectorsFromSheet(wb);
+    // Try Register of Directors sheet first (has remarks); fall back to Export sheet
+    const regDirectors = readRegisterOfDirectors(wb);
+    if (regDirectors) {
+        result.directors = regDirectors.map(d => d.name);
+        result.director_remarks = Object.fromEntries(regDirectors.map(d => [d.name, d.remarks]));
+    } else {
+        result.directors = readDirectorsFromSheet(wb);
+        result.director_remarks = {};
+    }
     if (result.directors.length === 0) result.errors.push('No directors found');
 
     return result;
@@ -305,6 +357,9 @@ const state = {
     dirHandle: null,
     fileHandles: {},
     syncFired: false,   // prevents double-fire of auto-sync per scan
+    profiles: {},       // { "regNo::docType": profile_data } — cached from server
+    activeDocType: 'directors_resolution',
+    editingProfile: null, // { path, docType, profile } — live unsaved edits from the Generate tab bento editor
 };
 
 // DOM Elements (desktop app)
@@ -364,6 +419,10 @@ const el = {
     progressBar: document.getElementById('generation-progress'),
     progressText: document.getElementById('progress-text'),
     btnGenerate: document.getElementById('btn-generate'),
+    generateDoctypePopover: document.getElementById('generate-doctype-popover'),
+    doctypeCheckResolution: document.getElementById('doctype-check-resolution'),
+    doctypeCheckMinutes: document.getElementById('doctype-check-minutes'),
+    btnConfirmGenerate: document.getElementById('btn-confirm-generate'),
 
     historyModal: document.getElementById('history-modal'),
     historyCompanyName: document.getElementById('history-company-name'),
@@ -623,7 +682,28 @@ function registerEvents() {
         });
     });
 
-    el.btnGenerate.addEventListener('click', runGeneration);
+    el.btnGenerate.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = el.generateDoctypePopover.style.display !== 'none';
+        el.generateDoctypePopover.style.display = isOpen ? 'none' : 'flex';
+    });
+    document.addEventListener('click', (e) => {
+        if (el.generateDoctypePopover.style.display === 'none') return;
+        if (!el.generateDoctypePopover.contains(e.target) && e.target !== el.btnGenerate) {
+            el.generateDoctypePopover.style.display = 'none';
+        }
+    });
+    el.btnConfirmGenerate.addEventListener('click', () => {
+        const docTypes = [];
+        if (el.doctypeCheckResolution.checked) docTypes.push('directors_resolution');
+        if (el.doctypeCheckMinutes.checked) docTypes.push('agm_minutes');
+        if (docTypes.length === 0) {
+            showToast('Select at least one document type to generate', 'warn');
+            return;
+        }
+        el.generateDoctypePopover.style.display = 'none';
+        runGeneration(docTypes);
+    });
 
     const closeModal = () => el.historyModal.style.display = 'none';
     el.btnCloseModal.addEventListener('click', closeModal);
@@ -636,26 +716,11 @@ function registerEvents() {
 
 function _openUserProfile() {
     if (!window.__clerk) return;
-    const overlay = document.getElementById('clerk-profile-overlay');
-    const container = document.getElementById('clerk-profile-container');
-    if (!overlay || !container) return;
-
-    overlay.style.display = 'flex';
-    window.__clerk.mountUserProfile(container);
+    // openUserProfile() renders Clerk's own modal + backdrop and lazy-loads
+    // its UI components internally, so it can't hit the "not loaded with Ui
+    // components" race that mountUserProfile() can on a slow connection.
+    window.__clerk.openUserProfile();
 }
-
-function _closeUserProfile() {
-    const overlay = document.getElementById('clerk-profile-overlay');
-    const container = document.getElementById('clerk-profile-container');
-    if (!overlay || !container) return;
-    if (window.__clerk) window.__clerk.unmountUserProfile(container);
-    overlay.style.display = 'none';
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    const backdrop = document.getElementById('clerk-profile-backdrop');
-    if (backdrop) backdrop.addEventListener('click', _closeUserProfile);
-});
 
 function _populateAvatar(btnEl, dropdownEl, wrapperEl) {
     const user = window.__clerk && window.__clerk.user;
@@ -940,6 +1005,7 @@ async function readCompanyFile(filename, force = false) {
             agm_number:         data.agm_number || '',
             agm_date:           data.agm_date || '',
             directors:          data.directors || [],
+            director_remarks:   data.director_remarks || {},
         };
 
         applyDateDefaultRules(state.companies[filename].data);
@@ -1730,6 +1796,18 @@ function loadCompanyDetails(path) {
     renderOverviewDirectorsList(c.data.directors);
     renderWarnings(c);
     updateLivePreview();
+
+    // Load generate tab profile (async, non-blocking)
+    state.editingProfile = null;
+    state.activeDocType = 'directors_resolution';
+    const regNo = c.data.reg_no;
+    if (regNo) {
+        loadCompanyProfile(regNo, state.activeDocType).then(profile => {
+            renderGenerateTab(path, profile, state.activeDocType);
+        });
+    } else {
+        renderGenerateTab(path, null, state.activeDocType);
+    }
 }
 
 function updateOrdinalPreview() {
@@ -1755,16 +1833,21 @@ function renderDirectorsList(directors) {
         return;
     }
 
+    const remarks = c.data.director_remarks || {};
     allDirs.forEach(name => {
         const row = document.createElement('div');
         row.className = 'director-row';
         const isChecked = c.data.selected_directors.includes(name) ? 'checked' : '';
+        const remarkText = remarks[name] || '';
+        const remarkBadge = remarkText
+            ? `<span class="director-remark-badge">${remarkText}</span>`
+            : '';
         row.innerHTML = `
             <div class="custom-checkbox" style="margin-right: 12px;">
                 <input type="checkbox" class="director-checkbox" data-name="${name}" ${isChecked}>
                 <div class="checkbox-visual"><i data-lucide="check"></i></div>
             </div>
-            <span class="director-name-span">${name}</span>`;
+            <span class="director-name-span">${name}</span>${remarkBadge}`;
 
         row.querySelector('.director-checkbox').addEventListener('change', (e) => {
             const dirName = e.target.getAttribute('data-name');
@@ -1882,6 +1965,14 @@ async function rereadSelectedCompany() {
 // Live Preview
 // ------------------------------------------------------------------ #
 
+function _escHtml(s) {
+    return (s || '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function _substituteTemplate(tpl, subs) {
+    return (tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in subs ? subs[k] : m));
+}
+
 function updateLivePreview() {
     if (!state.selectedPath) {
         el.previewDocument.innerHTML = `<div class="preview-empty-state"><i data-lucide="file-text"></i><p>Select a company to load resolution document preview.</p></div>`;
@@ -1889,8 +1980,21 @@ function updateLivePreview() {
         return;
     }
 
-    const c = state.companies[state.selectedPath];
+    const path = state.selectedPath;
+    const c = state.companies[path];
     if (!c.data) return;
+
+    const docType = state.activeDocType || 'directors_resolution';
+    const isMinutes = docType === 'agm_minutes';
+
+    let profile;
+    if (state.editingProfile && state.editingProfile.path === path && state.editingProfile.docType === docType) {
+        profile = state.editingProfile.profile;
+    } else {
+        const cachedRegNo = c.data.reg_no;
+        const cached = cachedRegNo ? state.profiles[_profileCacheKey(cachedRegNo, docType)] : undefined;
+        profile = cached || (isMinutes ? MINUTES_DOC_PROFILE : DEFAULT_DOC_PROFILE);
+    }
 
     const companyName = (c.data.company_name || 'COMPANY NAME').toUpperCase();
     const regNo = c.data.reg_no || 'UEN REGISTRATION NO';
@@ -1900,9 +2004,40 @@ function updateLivePreview() {
     const agmNum = parseInt(c.data.agm_number || '1') || 1;
     const ordinalCap = ORDINALS[agmNum] || `${agmNum}th`;
     const ordinalUpper = ordinalCap.toUpperCase();
+    const location = profile.location || address;
+
+    const subs = { year_end: yearEnd, ordinal_cap: ordinalCap, ordinal_upper: ordinalUpper, address, agm_date: agmDate, location };
+    const sub = tpl => _substituteTemplate(tpl, subs);
+
+    const sectionsHtml = (profile.sections || [])
+        .filter(s => s.included !== false)
+        .map(s => `
+            <div class="preview-doc-section-title">${_escHtml(sub(s.heading))}</div>
+            <div class="preview-doc-text">${_escHtml(sub(s.body))}</div>`)
+        .join('') || `<div class="preview-doc-text preview-doc-placeholder">No sections defined yet for this document type.</div>`;
+
+    const includedAgenda = (profile.agenda_items || []).filter(a => a.included !== false);
+    const agendaHtml = includedAgenda.length ? `
+        <div class="preview-doc-section-title">AGENDA OF ANNUAL GENERAL MEETING</div>
+        <div class="preview-doc-text">That the Agenda of the Annual General Meeting of the members of the Company be respectively as follows :-</div>
+        <div class="preview-doc-agenda-list">
+            ${includedAgenda.map((item, i) => `<div class="preview-doc-agenda-item"><span>(${String.fromCharCode(97 + i)})</span> <span>${_escHtml(sub(item.text))}</span></div>`).join('')}
+        </div>` : '';
+
+    if (isMinutes) {
+        el.previewDocument.innerHTML = `
+            <div class="preview-doc-title">${_escHtml(companyName)}</div>
+            <div class="preview-doc-divider">...........................................................................................</div>
+            <div class="preview-doc-meta">Company Regn No. &nbsp; ${_escHtml(regNo)}</div>
+            <div class="preview-doc-meta">(Incorporated in the Republic of Singapore)</div>
+            <div class="preview-doc-banner">MINUTES OF ANNUAL GENERAL MEETING</div>
+            ${sectionsHtml}
+            ${agendaHtml}`;
+        return;
+    }
 
     let sigsHtml = '';
-    const activeDirs = c.data.directors.filter(d => d.trim());
+    const activeDirs = (c.data.directors || []).filter(d => d.trim());
 
     if (activeDirs.length === 0) {
         sigsHtml = `<div class="preview-doc-signatures-grid"><div class="preview-doc-signature-block"><div class="preview-doc-signature-line"></div><div class="preview-doc-signature-name">[NO SIGNATORIES SELECTED]</div></div></div>`;
@@ -1914,35 +2049,22 @@ function updateLivePreview() {
                 <div class="preview-doc-signatures-grid">
                     <div class="preview-doc-signature-block">
                         <div class="preview-doc-signature-line"></div>
-                        <div class="preview-doc-signature-name">${dir1}</div>
+                        <div class="preview-doc-signature-name">${_escHtml(dir1)}</div>
                     </div>
-                    ${dir2 ? `<div class="preview-doc-signature-block"><div class="preview-doc-signature-line"></div><div class="preview-doc-signature-name">${dir2}</div></div>` : '<div></div>'}
+                    ${dir2 ? `<div class="preview-doc-signature-block"><div class="preview-doc-signature-line"></div><div class="preview-doc-signature-name">${_escHtml(dir2)}</div></div>` : '<div></div>'}
                 </div>`;
         }
     }
 
     el.previewDocument.innerHTML = `
-        <div class="preview-doc-title">${companyName}</div>
+        <div class="preview-doc-title">${_escHtml(companyName)}</div>
         <div class="preview-doc-divider">...........................................................................................</div>
-        <div class="preview-doc-meta">Company Regn No. &nbsp; ${regNo}</div>
+        <div class="preview-doc-meta">Company Regn No. &nbsp; ${_escHtml(regNo)}</div>
         <div class="preview-doc-meta">(Incorporated in the Republic of Singapore)</div>
         <div class="preview-doc-banner">DIRECTORS' RESOLUTION</div>
-        <div class="preview-doc-subtitle">In writing pursuant to the authority given by Article 93<br>of the Company's Articles of Association, hereby RESOLVED:-</div>
-        <div class="preview-doc-section-title">AUDITED ACCOUNTS/FINANCIAL STATEMENTS</div>
-        <div class="preview-doc-text">That the audited accounts/financial statements of the Company for the year ended ${yearEnd} having been examined by the Directors be and are hereby approved and authorised for issue.</div>
-        <div class="preview-doc-section-title">DIRECTORS' STATEMENT & AUDITORS' REPORT</div>
-        <div class="preview-doc-text">That the Directors' Statement and Report of Auditors of the Company for the year ended ${yearEnd} be and are hereby adopted and approved and that any two Directors be authorised to sign on behalf of the Board the Directors' Statement.</div>
-        <div class="preview-doc-section-title">${ordinalUpper} ANNUAL GENERAL MEETING</div>
-        <div class="preview-doc-text">That the ${ordinalCap} Annual General Meeting of members of the Company will be held at ${address} on &nbsp; <b>${agmDate}</b>.</div>
-        <div class="preview-doc-section-title">AGENDA OF ${ordinalUpper} ANNUAL GENERAL MEETING</div>
-        <div class="preview-doc-text">That the Agenda of the ${ordinalCap} Annual General Meeting of the members of the Company be respectively as follows :-</div>
-        <div class="preview-doc-agenda-list">
-            <div class="preview-doc-agenda-item"><span>(a)</span> <span>To receive and approve the Company's Audited Accounts/financial statements together with the Directors' Statement and Report of Auditors for the year ended ${yearEnd}.</span></div>
-            <div class="preview-doc-agenda-item"><span>(b)</span> <span>To approve Auditors' Remuneration.</span></div>
-            <div class="preview-doc-agenda-item"><span>(c)</span> <span>To elect Directors.</span></div>
-            <div class="preview-doc-agenda-item"><span>(d)</span> <span>To appoint Auditors.</span></div>
-            <div class="preview-doc-agenda-item"><span>(e)</span> <span>To transact any other business, if any.</span></div>
-        </div>
+        <div class="preview-doc-subtitle">In writing pursuant to the authority given by ${_escHtml(profile.banner_pursuant || '')},<br>hereby RESOLVED:-</div>
+        ${sectionsHtml}
+        ${agendaHtml}
         <div class="preview-doc-signatures-header">DIRECTORS</div>
         ${sigsHtml}
         <div class="preview-doc-date">Dated this &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; day of</div>`;
@@ -2011,7 +2133,7 @@ function renderHistoryRows(records) {
 // Generation Pipeline — returns zip download
 // ------------------------------------------------------------------ #
 
-async function runGeneration() {
+async function runGeneration(docTypes = ['directors_resolution']) {
     if (state.selectedPath) saveCompanyEdits();
 
     const selectedCompanies = Object.values(state.companies).filter(c => c.checked);
@@ -2046,8 +2168,12 @@ async function runGeneration() {
         companies: selectedCompanies.map(c => ({
             filename: c.filename,
             data: c.data,
+            profiles: Object.fromEntries(
+                docTypes.map(dt => [dt, state.profiles[_profileCacheKey(c.data.reg_no, dt)] || null])
+            ),
         })),
         fy_year: global_fy_year,
+        doc_types: docTypes,
     };
 
     try {
@@ -2089,6 +2215,379 @@ async function runGeneration() {
     } finally {
         el.btnGenerate.disabled = false;
         setTimeout(() => { el.progressContainer.style.display = 'none'; }, 3000);
+    }
+}
+
+// ------------------------------------------------------------------ #
+// Company Profile — Generate Tab
+// ------------------------------------------------------------------ #
+
+const DEFAULT_DOC_PROFILE = {
+    company_type: 'audited',
+    banner_pursuant: "Article 93 of the Company's Articles of Association",
+    sections: [
+        {
+            id: 'financial_statements', included: true,
+            heading: 'AUDITED ACCOUNTS/FINANCIAL STATEMENTS',
+            body: "That the audited accounts/financial statements of the Company for the year ended {year_end} having been examined by the Directors be and are hereby approved and authorised for issue.",
+        },
+        {
+            id: 'directors_statement', included: true,
+            heading: "DIRECTORS' STATEMENT & AUDITORS' REPORT",
+            body: "That the Directors' Statement and Report of Auditors of the Company for the year ended {year_end} be and are hereby adopted and approved and that any two Directors be authorised to sign on behalf of the Board the Directors' Statement.",
+        },
+        {
+            id: 'agm_notice', included: true,
+            heading: '{ordinal_upper} ANNUAL GENERAL MEETING',
+            body: "That the {ordinal_cap} Annual General Meeting of members of the Company will be held at {location} on {agm_date}.",
+        },
+    ],
+    agenda_items: [
+        { id: 'a_financial',             included: true,  text: "To receive and approve the Company's Audited Accounts/financial statements together with the Directors' Statement and Report of Auditors for the year ended {year_end}." },
+        { id: 'b_auditors_remuneration', included: true,  text: "To approve Auditors' Remuneration" },
+        { id: 'c_elect_directors',       included: true,  text: "To elect Directors" },
+        { id: 'd_appoint_auditors',      included: true,  text: "To appoint Auditors" },
+        { id: 'e_any_other',             included: true,  text: "To transact any other business, if any." },
+    ],
+};
+
+const SMALL_EXEMPT_DOC_PROFILE = {
+    company_type: 'small_exempt',
+    banner_pursuant: "Article 93 of the Company's Articles of Association",
+    sections: [
+        {
+            id: 'small_exempt_header', included: true,
+            heading: 'SMALL COMPANY EXEMPT FROM AUDIT REQUIREMENTS',
+            body: "That the Company being a small company as defined under Section 205C of the Companies Act is exempt from the requirement to have its financial statements audited.",
+        },
+        {
+            id: 'financial_statements', included: true,
+            heading: 'UNAUDITED FINANCIAL STATEMENTS',
+            body: "That the unaudited financial statements of the Company for the year ended {year_end} having been examined by the Directors be and are hereby approved and authorised for issue.",
+        },
+        {
+            id: 'directors_statement', included: true,
+            heading: "DIRECTORS' STATEMENT",
+            body: "That the Directors' Statement of the Company for the year ended {year_end} be and is hereby adopted and approved and that any two Directors be authorised to sign on behalf of the Board the Directors' Statement.",
+        },
+        {
+            id: 'agm_notice', included: true,
+            heading: '{ordinal_upper} ANNUAL GENERAL MEETING',
+            body: "That the {ordinal_cap} Annual General Meeting of members of the Company will be held at {location} on {agm_date}.",
+        },
+    ],
+    agenda_items: [
+        { id: 'a_financial',       included: true, text: "To receive and approve the Company's Unaudited Financial Statements together with the Directors' Statement for the year ended {year_end}." },
+        { id: 'c_elect_directors', included: true, text: "To elect Directors" },
+        { id: 'e_any_other',       included: true, text: "To transact any other business, if any." },
+    ],
+};
+
+// AGM Minutes — structural skeleton only. No default sections yet; mirrors
+// the resolution profile shape so the bento editor / live preview can be
+// reused without special-casing. Content gets filled in in a future pass.
+const MINUTES_DOC_PROFILE = {
+    doc_type: 'agm_minutes',
+    location: '',
+    sections: [],
+    agenda_items: [],
+};
+
+function _profileCacheKey(regNo, docType) {
+    return `${regNo}::${docType}`;
+}
+
+async function loadCompanyProfile(regNo, docType = 'directors_resolution') {
+    const key = _profileCacheKey(regNo, docType);
+    if (state.profiles[key] !== undefined) return state.profiles[key];
+    try {
+        const res = await authFetch(`/api/profiles?reg_no=${encodeURIComponent(regNo)}&doc_type=${encodeURIComponent(docType)}`);
+        if (!res.ok) throw new Error('profile fetch failed');
+        const { profile } = await res.json();
+        state.profiles[key] = profile || null;
+        return state.profiles[key];
+    } catch {
+        state.profiles[key] = null;
+        return null;
+    }
+}
+
+async function saveCompanyProfile(regNo, profile, docType = 'directors_resolution') {
+    state.profiles[_profileCacheKey(regNo, docType)] = profile;
+    await authFetch('/api/profiles', {
+        method: 'POST',
+        body: JSON.stringify({ reg_no: regNo, doc_type: docType, profile }),
+    });
+}
+
+function _deepClone(obj) {
+    return JSON.parse(JSON.stringify(obj));
+}
+
+function renderGenerateTab(path, savedProfile, docType = 'directors_resolution') {
+    const pane = document.getElementById('generate-tab');
+    if (!pane) return;
+
+    const c = state.companies[path];
+    if (!c || !c.data) {
+        pane.innerHTML = `<div class="details-empty"><i data-lucide="mouse-pointer-click" class="empty-icon"></i><h2>No Company Selected</h2></div>`;
+        lucide.createIcons({ nodes: [pane] });
+        return;
+    }
+
+    const isMinutes = docType === 'agm_minutes';
+    const defaultPreset = isMinutes ? MINUTES_DOC_PROFILE : DEFAULT_DOC_PROFILE;
+    const profile = savedProfile ? _deepClone(savedProfile) : _deepClone(defaultPreset);
+    if (!profile.location) profile.location = c.data.address || '';
+    const companyType = profile.company_type || 'audited';
+
+    const esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    const sectionsHtml = profile.sections.map((sec, idx) => `
+        <div class="bento-section-card" data-idx="${idx}">
+            <div class="bento-section-header">
+                <label class="bento-toggle">
+                    <input type="checkbox" class="bento-section-enabled" data-idx="${idx}" ${sec.included ? 'checked' : ''}>
+                    <span class="bento-toggle-slider"></span>
+                </label>
+                <span class="bento-section-id">${esc(sec.id.replace(/_/g,' '))}</span>
+            </div>
+            <div class="bento-section-body" ${sec.included ? '' : 'style="display:none"'}>
+                <div class="bento-field">
+                    <label>Heading</label>
+                    <input type="text" class="bento-heading-input" data-idx="${idx}" value="${esc(sec.heading)}">
+                </div>
+                <div class="bento-field">
+                    <label>Body Text <span class="bento-hint">(use {year_end}, {ordinal_cap}, {address}, {location}, {agm_date})</span></label>
+                    <textarea class="bento-body-input" data-idx="${idx}" rows="4">${esc(sec.body)}</textarea>
+                </div>
+            </div>
+        </div>`).join('') || `<div class="bento-empty-placeholder">No sections defined yet for this document type.</div>`;
+
+    const agendaHtml = profile.agenda_items.map((item, idx) => `
+        <div class="agenda-item-row" data-agenda-idx="${idx}">
+            <label class="bento-toggle agenda-toggle">
+                <input type="checkbox" class="agenda-item-enabled" data-agenda-idx="${idx}" ${item.included ? 'checked' : ''}>
+                <span class="bento-toggle-slider"></span>
+            </label>
+            <input type="text" class="agenda-item-text" data-agenda-idx="${idx}" value="${esc(item.text)}" ${item.included ? '' : 'disabled'}>
+            ${item.id.startsWith('custom_') ? `<button class="btn-remove-agenda" data-agenda-idx="${idx}" title="Remove"><i data-lucide="x"></i></button>` : ''}
+        </div>`).join('') || `<div class="bento-empty-placeholder">No agenda items yet — use "Add Item" below.</div>`;
+
+    pane.innerHTML = `
+        <div class="generate-tab-content">
+            <div class="doc-type-switcher">
+                <button class="doc-type-tab ${!isMinutes ? 'active' : ''}" data-doc-type="directors_resolution">
+                    <i data-lucide="file-text"></i> Directors' Resolution
+                </button>
+                <button class="doc-type-tab ${isMinutes ? 'active' : ''}" data-doc-type="agm_minutes">
+                    <i data-lucide="users"></i> AGM Minutes
+                </button>
+            </div>
+
+            <div class="form-card card-m3">
+                <div class="card-header"><h3><i data-lucide="layers"></i> Document Builder — ${isMinutes ? 'AGM Minutes' : "Directors' Resolution"}</h3></div>
+
+                ${isMinutes ? '' : `
+                <div class="company-type-toggle">
+                    <span class="company-type-label">Company Type</span>
+                    <div class="company-type-options">
+                        <label class="company-type-option ${companyType === 'audited' ? 'active' : ''}">
+                            <input type="radio" name="company-type" value="audited" ${companyType === 'audited' ? 'checked' : ''}>
+                            <i data-lucide="file-check"></i> Audited Company
+                        </label>
+                        <label class="company-type-option ${companyType === 'small_exempt' ? 'active' : ''}">
+                            <input type="radio" name="company-type" value="small_exempt" ${companyType === 'small_exempt' ? 'checked' : ''}>
+                            <i data-lucide="shield-off"></i> Small Company (Exempt)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="bento-field" style="margin-bottom:16px;">
+                    <label>Banner Pursuant Reference</label>
+                    <input type="text" id="banner-pursuant-input" value="${esc(profile.banner_pursuant || '')}" placeholder="e.g. Article 93 of the Company's Articles of Association">
+                </div>`}
+
+                <div class="bento-field" style="margin-bottom:0;">
+                    <label>Meeting Location <span class="bento-hint">(defaults to company address, used as {location})</span></label>
+                    <input type="text" id="agm-location-input" value="${esc(profile.location)}" placeholder="Defaults to company address">
+                </div>
+            </div>
+
+            <div class="form-card card-m3">
+                <div class="card-header"><h3><i data-lucide="layout-list"></i> Sections</h3></div>
+                <div id="bento-sections-list">${sectionsHtml}</div>
+            </div>
+
+            <div class="form-card card-m3">
+                <div class="card-header">
+                    <h3><i data-lucide="list-ordered"></i> Agenda Items</h3>
+                    <div class="card-header-actions">
+                        <button id="btn-add-agenda-item" class="btn-secondary" style="font-size:0.78rem;padding:4px 10px;">
+                            <i data-lucide="plus"></i> Add Item
+                        </button>
+                    </div>
+                </div>
+                <div id="agenda-items-list">${agendaHtml}</div>
+            </div>
+
+            <div class="generate-tab-actions">
+                <button id="btn-save-profile" class="btn-secondary">
+                    <i data-lucide="save"></i> Save Profile
+                </button>
+            </div>
+        </div>`;
+
+    lucide.createIcons({ nodes: [pane] });
+
+    // Helper to read current profile state from DOM
+    function readProfileFromDOM() {
+        const sections = profile.sections.map((sec, idx) => {
+            const enabledEl = pane.querySelector(`.bento-section-enabled[data-idx="${idx}"]`);
+            const headingEl = pane.querySelector(`.bento-heading-input[data-idx="${idx}"]`);
+            const bodyEl    = pane.querySelector(`.bento-body-input[data-idx="${idx}"]`);
+            return {
+                ...sec,
+                included: enabledEl ? enabledEl.checked : sec.included,
+                heading:  headingEl ? headingEl.value    : sec.heading,
+                body:     bodyEl    ? bodyEl.value       : sec.body,
+            };
+        });
+        const agendaItems = profile.agenda_items.map((item, idx) => {
+            const enabledEl = pane.querySelector(`.agenda-item-enabled[data-agenda-idx="${idx}"]`);
+            const textEl    = pane.querySelector(`.agenda-item-text[data-agenda-idx="${idx}"]`);
+            return {
+                ...item,
+                included: enabledEl ? enabledEl.checked : item.included,
+                text:     textEl    ? textEl.value      : item.text,
+            };
+        });
+        const typeRadio = pane.querySelector('input[name="company-type"]:checked');
+        const pursuantEl = pane.querySelector('#banner-pursuant-input');
+        const locationEl = pane.querySelector('#agm-location-input');
+        return {
+            doc_type:         docType,
+            company_type:     typeRadio   ? typeRadio.value  : companyType,
+            banner_pursuant:  pursuantEl  ? pursuantEl.value : profile.banner_pursuant,
+            location:         locationEl  ? locationEl.value : profile.location,
+            sections,
+            agenda_items: agendaItems,
+        };
+    }
+
+    // Live preview: re-render the preview sidebar from the in-progress (unsaved) edits
+    function refreshLivePreview() {
+        state.editingProfile = { path, docType, profile: readProfileFromDOM() };
+        updateLivePreview();
+    }
+    pane.addEventListener('input', refreshLivePreview);
+    pane.addEventListener('change', refreshLivePreview);
+
+    // Doc-type switcher
+    pane.querySelectorAll('.doc-type-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const newType = btn.getAttribute('data-doc-type');
+            if (newType === docType) return;
+            state.activeDocType = newType;
+            state.editingProfile = null;
+            const regNo = c.data.reg_no;
+            if (regNo) {
+                loadCompanyProfile(regNo, newType).then(p => {
+                    renderGenerateTab(path, p, newType);
+                    updateLivePreview();
+                });
+            } else {
+                renderGenerateTab(path, null, newType);
+                updateLivePreview();
+            }
+        });
+    });
+
+    // Company type switch — reload preset but keep edits prompt
+    pane.querySelectorAll('input[name="company-type"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            const newType = radio.value;
+            pane.querySelectorAll('.company-type-option').forEach(opt => {
+                opt.classList.toggle('active', opt.querySelector('input').value === newType);
+            });
+            const preset = newType === 'small_exempt'
+                ? _deepClone(SMALL_EXEMPT_DOC_PROFILE)
+                : _deepClone(DEFAULT_DOC_PROFILE);
+            preset.company_type = newType;
+            preset.location = profile.location;
+            renderGenerateTab(path, preset, docType);
+            updateLivePreview();
+        });
+    });
+
+    // Toggle section body visibility
+    pane.querySelectorAll('.bento-section-enabled').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const idx = cb.getAttribute('data-idx');
+            const body = pane.querySelector(`.bento-section-card[data-idx="${idx}"] .bento-section-body`);
+            if (body) body.style.display = cb.checked ? '' : 'none';
+        });
+    });
+
+    // Toggle agenda item text disabled
+    pane.querySelectorAll('.agenda-item-enabled').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const idx = cb.getAttribute('data-agenda-idx');
+            const textEl = pane.querySelector(`.agenda-item-text[data-agenda-idx="${idx}"]`);
+            if (textEl) textEl.disabled = !cb.checked;
+        });
+    });
+
+    // Remove custom agenda item
+    pane.querySelectorAll('.btn-remove-agenda').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = parseInt(btn.getAttribute('data-agenda-idx'));
+            const currentProfile = readProfileFromDOM();
+            currentProfile.agenda_items.splice(idx, 1);
+            renderGenerateTab(path, currentProfile, docType);
+            updateLivePreview();
+        });
+    });
+
+    // Add custom agenda item
+    const btnAdd = pane.querySelector('#btn-add-agenda-item');
+    if (btnAdd) {
+        btnAdd.addEventListener('click', () => {
+            const currentProfile = readProfileFromDOM();
+            const customId = `custom_${Date.now()}`;
+            currentProfile.agenda_items.push({ id: customId, included: true, text: '' });
+            renderGenerateTab(path, currentProfile, docType);
+            updateLivePreview();
+            // Focus the new item's text field
+            setTimeout(() => {
+                const lastIdx = currentProfile.agenda_items.length - 1;
+                const newInput = pane.querySelector(`.agenda-item-text[data-agenda-idx="${lastIdx}"]`);
+                if (newInput) newInput.focus();
+            }, 50);
+        });
+    }
+
+    // Save profile
+    const btnSave = pane.querySelector('#btn-save-profile');
+    if (btnSave) {
+        btnSave.addEventListener('click', async () => {
+            const regNo = c.data.reg_no;
+            if (!regNo) { showToast('Cannot save profile — company UEN is missing', 'warn'); return; }
+            btnSave.disabled = true;
+            btnSave.innerHTML = '<i data-lucide="loader"></i> Saving...';
+            lucide.createIcons({ nodes: [btnSave] });
+            try {
+                const profileToSave = readProfileFromDOM();
+                await saveCompanyProfile(regNo, profileToSave, docType);
+                showToast('Profile saved successfully', 'success');
+            } catch {
+                showToast('Failed to save profile', 'error');
+            } finally {
+                btnSave.disabled = false;
+                btnSave.innerHTML = '<i data-lucide="save"></i> Save Profile';
+                lucide.createIcons({ nodes: [btnSave] });
+            }
+        });
     }
 }
 

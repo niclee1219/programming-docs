@@ -1338,10 +1338,16 @@ body.light-theme .preview-document {
 
 .preview-doc-section-title {
     font-weight: bold;
+    text-decoration: underline;
     font-size: 0.65rem;
     margin-top: 10px;
     margin-bottom: 3px;
     text-transform: uppercase;
+}
+
+.preview-doc-placeholder {
+    opacity: 0.55;
+    font-style: italic;
 }
 
 .preview-doc-text {
@@ -1448,6 +1454,43 @@ body.light-theme .preview-document {
     display: flex;
     align-items: center;
     gap: 16px;
+}
+
+.generate-btn-wrapper {
+    position: relative;
+}
+
+.generate-doctype-popover {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    right: 0;
+    width: 260px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 50;
+}
+
+.generate-doctype-popover-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.generate-doctype-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.86rem;
+    color: var(--text-primary);
+    cursor: pointer;
 }
 
 .progress-container {
@@ -2090,31 +2133,6 @@ body.light-theme .toast {
 .toast-fadeout {
     opacity: 0;
     transform: translateY(12px) scale(0.96);
-}
-
-/* ── Clerk User Profile Modal Overlay ───────────────────────────────── */
-#clerk-profile-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 100001;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-#clerk-profile-backdrop {
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-}
-#clerk-profile-container {
-    position: relative;
-    z-index: 1;
-    border-radius: 12px;
-    overflow: hidden;
-    max-height: 90vh;
-    overflow-y: auto;
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
 }
 
 /* Small Action Button Controls */
@@ -2890,4 +2908,266 @@ body.light-theme .avatar-dropdown {
 
 .mobile-person-company:last-child {
     border-bottom: none;
+}
+
+/* ── Director Remark Badge ──────────────────────────────────────────── */
+.director-remark-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 7px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--accent-primary);
+    background: var(--accent-primary-glow);
+    border: 1px solid var(--accent-primary);
+    border-radius: 999px;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+/* ── Generate Tab ───────────────────────────────────────────────────── */
+.generate-tab-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 800px;
+    margin: 0 auto;
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* Document type switcher (Generate tab) */
+.doc-type-switcher {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+.doc-type-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    transition: var(--transition-smooth);
+}
+.doc-type-tab.active {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    background: var(--accent-primary-glow);
+}
+.doc-type-tab:hover:not(.active) {
+    border-color: var(--border-highlight);
+    color: var(--text-primary);
+}
+
+.bento-empty-placeholder {
+    padding: 14px;
+    text-align: center;
+    font-size: 0.8rem;
+    font-style: italic;
+    color: var(--text-muted);
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+}
+
+/* Company type toggle */
+.company-type-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+.company-type-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+.company-type-options {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.company-type-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    transition: var(--transition-smooth);
+    user-select: none;
+}
+.company-type-option input[type="radio"] { display: none; }
+.company-type-option.active {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    background: var(--accent-primary-glow);
+}
+.company-type-option:hover:not(.active) {
+    border-color: var(--border-highlight);
+    color: var(--text-primary);
+}
+
+/* Bento section cards */
+.bento-section-card {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    background: var(--bg-tertiary);
+}
+.bento-section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+.bento-section-id {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: capitalize;
+    letter-spacing: 0.03em;
+}
+.bento-section-body {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.bento-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.bento-field label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.bento-hint {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+}
+.bento-heading-input,
+.bento-body-input,
+#banner-pursuant-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.83rem;
+    transition: border-color 0.2s;
+    resize: vertical;
+}
+.bento-heading-input:focus,
+.bento-body-input:focus,
+#banner-pursuant-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+/* Agenda items */
+.agenda-item-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+.agenda-item-row:last-child { border-bottom: none; }
+.agenda-toggle { flex-shrink: 0; }
+.agenda-item-text {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.83rem;
+}
+.agenda-item-text:focus { outline: none; border-color: var(--accent-primary); }
+.agenda-item-text:disabled { opacity: 0.4; }
+.btn-remove-agenda {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-error);
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+.btn-remove-agenda:hover { background: rgba(239,68,68,0.1); }
+
+/* Toggle switch */
+.bento-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.bento-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.bento-toggle-slider {
+    width: 34px;
+    height: 18px;
+    background: var(--border-color);
+    border-radius: 999px;
+    transition: background 0.2s;
+    position: relative;
+}
+.bento-toggle-slider::after {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    transition: transform 0.2s, background 0.2s;
+}
+.bento-toggle input:checked + .bento-toggle-slider {
+    background: var(--accent-primary);
+}
+.bento-toggle input:checked + .bento-toggle-slider::after {
+    transform: translateX(16px);
+    background: #fff;
+}
+
+/* Generate tab action bar */
+.generate-tab-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding-bottom: 16px;
 }

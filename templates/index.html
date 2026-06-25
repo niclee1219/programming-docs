@@ -157,6 +157,9 @@
               <button class="tab-btn" data-tab="details-tab" id="btn-tab-details">
                 <i data-lucide="file-edit"></i> Form Editor
               </button>
+              <button class="tab-btn" data-tab="generate-tab" id="btn-tab-generate">
+                <i data-lucide="layers"></i> Generate
+              </button>
             </div>
             <div class="tab-actions">
               <button id="btn-toggle-preview" class="btn-secondary" title="Toggle Live Preview">
@@ -297,6 +300,15 @@
                 <p>Select a company from the left panel to review details, view spreadsheet tabs, or edit fields.</p>
               </div>
             </div>
+
+            <!-- GENERATE TAB -->
+            <div id="generate-tab" class="tab-pane">
+              <div class="details-empty">
+                <i data-lucide="mouse-pointer-click" class="empty-icon"></i>
+                <h2>No Company Selected</h2>
+                <p>Select a company from the left panel to configure and generate its document.</p>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -343,9 +355,25 @@
             <span id="progress-text" class="progress-text">Generating 0/0...</span>
           </div>
 
-          <button id="btn-generate" class="btn-primary" disabled>
-            <i data-lucide="zap"></i> Generate Selected Documents
-          </button>
+          <div class="generate-btn-wrapper">
+            <button id="btn-generate" class="btn-primary" disabled>
+              <i data-lucide="zap"></i> Generate Selected Documents
+            </button>
+            <div id="generate-doctype-popover" class="generate-doctype-popover" style="display:none">
+              <div class="generate-doctype-popover-title">Select documents to generate</div>
+              <label class="generate-doctype-option">
+                <input type="checkbox" id="doctype-check-resolution" checked>
+                Directors' Resolution
+              </label>
+              <label class="generate-doctype-option">
+                <input type="checkbox" id="doctype-check-minutes">
+                AGM Minutes
+              </label>
+              <button id="btn-confirm-generate" class="btn-primary">
+                <i data-lucide="download"></i> Generate &amp; Download
+              </button>
+            </div>
+          </div>
         </div>
       </footer>
     </div>
@@ -448,8 +476,10 @@
 
     <!-- SheetJS — browser-side XLSM parsing -->
     <script
+      async
+      crossorigin="anonymous"
       data-clerk-publishable-key="{{ clerk_publishable_key }}"
-      src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
+      src="https://{{ clerk_frontend_api }}/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
     ></script>
     <script src="/static/xlsx.full.min.js"></script>
     <script src="/static/app.js"></script>
@@ -472,8 +502,13 @@
         }
       }
 
-      (async function initClerk() {
+      async function initClerk() {
         try {
+          // clerk-js loads with `async`, so it may not have executed yet —
+          // wait for window.Clerk to show up before touching it.
+          while (!window.Clerk) {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
           const clerk = window.Clerk;
           await clerk.load({
             routerPush:    (to) => window.location.assign(to),
@@ -512,7 +547,8 @@
             </div>`;
           overlay.style.display = "flex";
         }
-      })();
+      }
+      initClerk();
     </script>
 
     <!-- Toast Notification Container -->
@@ -520,11 +556,5 @@
 
     <!-- Floating Company Tooltip Popup -->
     <div id="company-tooltip" class="company-tooltip" style="display: none"></div>
-
-    <!-- Clerk User Profile Modal -->
-    <div id="clerk-profile-overlay" style="display:none;">
-      <div id="clerk-profile-backdrop"></div>
-      <div id="clerk-profile-container"></div>
-    </div>
   </body>
 </html>

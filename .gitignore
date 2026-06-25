@@ -10,3 +10,6 @@ instance/
 
 CLAUDE.md
 .claude
+
+.mcp.json
+migrations/
