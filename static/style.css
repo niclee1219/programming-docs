@@ -2437,3 +2437,314 @@ body.light-theme .splash-loader-bar {
     font-size: 0.82rem;
     margin: 0;
 }
+
+/* ================================================================== */
+/* MOBILE VIEW                                                          */
+/* ================================================================== */
+
+#mobile-view {
+    display: none;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg-primary);
+}
+
+.mobile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+    gap: 12px;
+}
+
+.mobile-sync-banner {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-align: right;
+    line-height: 1.4;
+    max-width: 220px;
+}
+
+.mobile-search-bar {
+    padding: 10px 14px;
+    flex-shrink: 0;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.mobile-search-bar input {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.mobile-search-bar input:focus {
+    border-color: var(--accent-primary);
+}
+
+.mobile-company-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 12px 24px;
+}
+
+.mobile-loading {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.mobile-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+.mobile-card:active {
+    border-color: var(--accent-primary);
+}
+
+.mobile-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    cursor: pointer;
+    gap: 12px;
+}
+
+.mobile-card-title {
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: var(--text-primary);
+    line-height: 1.3;
+}
+
+.mobile-card-uen {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.mobile-card-chevron {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    width: 16px;
+    height: 16px;
+    transition: transform 0.2s ease;
+}
+
+.mobile-card-body {
+    padding: 0 16px 14px;
+    border-top: 1px solid var(--border-color);
+}
+
+.mobile-field {
+    display: flex;
+    gap: 8px;
+    padding: 7px 0;
+    font-size: 0.83rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+    line-height: 1.45;
+}
+
+.mobile-field:last-child {
+    border-bottom: none;
+}
+
+.mobile-field strong {
+    color: var(--text-primary);
+    min-width: 110px;
+    flex-shrink: 0;
+    font-weight: 600;
+}
+
+.mobile-field span {
+    flex: 1;
+}
+
+.mobile-field-directors {
+    align-items: flex-start;
+}
+
+.mobile-directors-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    flex: 1;
+}
+
+.mobile-directors-list li {
+    padding: 1px 0;
+}
+
+/* ================================================================== */
+/* DIFF MODAL                                                           */
+/* ================================================================== */
+
+.diff-company-block {
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.diff-company-block:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.diff-company-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: var(--accent-primary);
+}
+
+.diff-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+
+.diff-table th {
+    padding: 7px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.diff-table td {
+    padding: 7px 10px;
+    border: 1px solid var(--border-color);
+    vertical-align: top;
+    line-height: 1.45;
+}
+
+.diff-old {
+    color: var(--color-error);
+    background: rgba(239, 68, 68, 0.05);
+}
+
+.diff-new {
+    color: var(--color-ok);
+    background: rgba(16, 185, 129, 0.05);
+}
+
+.diff-old-col, .diff-new-col {
+    width: 36%;
+}
+
+/* ── Avatar profile button ───────────────────────────────────────────── */
+.avatar-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.btn-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--border-color);
+    background: var(--accent-primary);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    overflow: hidden;
+    transition: border-color 0.2s, opacity 0.2s;
+    line-height: 1;
+}
+
+.btn-avatar:hover {
+    border-color: var(--accent-primary);
+    opacity: 0.85;
+}
+
+.btn-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.avatar-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 180px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    z-index: 500;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+body.light-theme .avatar-dropdown {
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+
+.avatar-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 16px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    font-family: inherit;
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s;
+}
+
+.avatar-dropdown-item i,
+.avatar-dropdown-item svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.avatar-dropdown-item:hover {
+    background: var(--bg-tertiary);
+}
+
+.avatar-dropdown-item--danger {
+    color: var(--color-error, #e05252);
+    border-top: 1px solid var(--border-color);
+}
+
+.avatar-dropdown-item--danger i,
+.avatar-dropdown-item--danger svg {
+    color: var(--color-error, #e05252);
+}

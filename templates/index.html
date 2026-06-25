@@ -23,30 +23,12 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <!-- LOGIN OVERLAY -->
+    <!-- LOGIN OVERLAY — Clerk mounts its SignIn UI here -->
     <div id="login-overlay" class="login-overlay" style="display:none">
-      <div class="login-card">
-        <div class="login-logo-wrapper">
-          <img src="/static/logo_white.png" id="login-logo" class="login-logo" alt="AGM Logo" />
-        </div>
-        <p class="login-subtitle">Internal Portal</p>
-        <div class="login-form">
-          <input
-            type="password"
-            id="login-code-input"
-            class="login-input"
-            placeholder="Enter access code"
-            autocomplete="off"
-          />
-          <button id="btn-login" class="btn-primary login-btn">Sign In</button>
-          <p id="login-error" class="login-error" style="display:none">
-            Incorrect code — please try again.
-          </p>
-        </div>
-      </div>
+      <!-- Clerk SignIn component mounts into this div at runtime -->
     </div>
 
-    <!-- PREMIUM WELCOME SPLASH SCREEN -->
+    <!-- WELCOME SCREEN -->
     <div id="welcome-splash" class="welcome-splash">
       <div class="splash-content">
         <div class="splash-logo-wrapper">
@@ -64,7 +46,7 @@
       </div>
     </div>
     <script>
-      // Inline script to set variables instantly before render to prevent asset flash
+      // Inline script: set theme instantly to prevent asset flash
       (function () {
         const savedTheme = localStorage.getItem("theme");
         const isLight = savedTheme === "light";
@@ -74,77 +56,57 @@
           document.body.classList.remove("light-theme");
         }
         const logo = document.getElementById("splash-logo");
-        if (logo) {
-          logo.src = isLight ? "/static/logo_black.png" : "/static/logo_white.png";
-        }
-        const loginLogo = document.getElementById("login-logo");
-        if (loginLogo) {
-          loginLogo.src = isLight ? "/static/logo_black.png" : "/static/logo_white.png";
-        }
+        if (logo) logo.src = isLight ? "/static/logo_black.png" : "/static/logo_white.png";
       })();
     </script>
 
+    <!-- DESKTOP APP -->
     <div class="app-container">
       <!-- TOP TOOLBAR -->
       <header class="top-toolbar">
         <div class="brand-section">
-          <!-- Collapsible Sidebar Trigger -->
-          <button
-            id="btn-toggle-sidebar"
-            class="btn-icon-only"
-            title="Toggle Sidebar"
-          >
+          <button id="btn-toggle-sidebar" class="btn-icon-only" title="Toggle Sidebar">
             <i data-lucide="menu"></i>
           </button>
-
-          <!-- Vertically Stacked Brand Header -->
           <div class="brand-logo-container">
             <div class="logo-wrapper">
-              <img
-                src="/static/logo_white.png"
-                id="app-logo"
-                class="logo-img"
-                alt="Logo"
-              />
+              <img src="/static/logo_white.png" id="app-logo" class="logo-img" alt="Logo" />
             </div>
           </div>
         </div>
 
         <div class="settings-bar">
           <div class="input-group">
-            <label for="xlsm-folder"
-              ><i data-lucide="folder-open"></i> XLSM Folder</label
-            >
+            <label for="xlsm-folder"><i data-lucide="folder-open"></i> XLSM Folder</label>
             <div class="picker-input">
-              <input
-                type="text"
-                id="xlsm-folder"
-                placeholder="No folder selected"
-                readonly
-              />
-              <button
-                id="btn-browse-xlsm"
-                class="btn-picker"
-                title="Pick folder from local disk"
-              >
+              <input type="text" id="xlsm-folder" placeholder="No folder selected" readonly />
+              <button id="btn-browse-xlsm" class="btn-picker" title="Pick folder from local disk">
                 <i data-lucide="folder"></i>
               </button>
             </div>
           </div>
 
-          <!-- Aligned Scan Column with Subtle Theme Switcher Above Scan Button -->
           <div class="scan-column">
-            <button
-              id="btn-theme-toggle"
-              class="btn-theme-subtle"
-              title="Toggle Light/Dark Theme"
-            >
+            <button id="btn-theme-toggle" class="btn-theme-subtle" title="Toggle Light/Dark Theme">
               <i data-lucide="sun"></i>
               <span class="theme-label">Light Mode</span>
             </button>
             <button id="btn-scan" class="btn-primary">
               <i data-lucide="search"></i> Scan Folder
             </button>
+          </div>
+
+          <!-- Avatar profile button -->
+          <div class="avatar-wrapper" id="avatar-wrapper">
+            <button id="btn-avatar" class="btn-avatar" title="Account"></button>
+            <div id="avatar-dropdown" class="avatar-dropdown" style="display:none;">
+              <button id="btn-manage-account" class="avatar-dropdown-item">
+                <i data-lucide="user"></i> Manage Account
+              </button>
+              <button id="btn-signout" class="avatar-dropdown-item avatar-dropdown-item--danger">
+                <i data-lucide="log-out"></i> Sign Out
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -155,28 +117,16 @@
         <section class="sidebar-pane" id="sidebar-pane">
           <div class="pane-header">
             <div class="search-mode-toggle">
-              <button
-                id="btn-mode-companies"
-                class="mode-toggle-btn active"
-                title="Search Companies"
-              >
+              <button id="btn-mode-companies" class="mode-toggle-btn active" title="Search Companies">
                 <i data-lucide="building"></i> Companies
               </button>
-              <button
-                id="btn-mode-people"
-                class="mode-toggle-btn"
-                title="Search People/Directors"
-              >
+              <button id="btn-mode-people" class="mode-toggle-btn" title="Search People/Directors">
                 <i data-lucide="users"></i> People
               </button>
             </div>
             <div class="search-box">
               <i data-lucide="search" class="search-icon"></i>
-              <input
-                type="text"
-                id="search-filter"
-                placeholder="Filter companies by name..."
-              />
+              <input type="text" id="search-filter" placeholder="Filter companies by name..." />
             </div>
           </div>
 
@@ -184,20 +134,14 @@
             <button id="btn-select-all" class="btn-link">Select All</button>
             <span class="separator">|</span>
             <button id="btn-deselect-all" class="btn-link">Deselect All</button>
-            <div id="company-count" class="company-count">
-              0 organisations selected
-            </div>
+            <div id="company-count" class="company-count">0 organisations selected</div>
           </div>
 
           <div class="company-list-wrapper">
             <ul id="company-list" class="company-list">
-              <!-- Loaded dynamically -->
               <div class="empty-list-placeholder">
                 <i data-lucide="folder-search" class="placeholder-icon"></i>
-                <p>
-                  Click <b>Scan Folder</b> and pick your local XLSM folder.
-                  Files are read directly from your disk — nothing is uploaded.
-                </p>
+                <p>Click <b>Scan Folder</b> and pick your local XLSM folder. Files are read directly from your disk</p>
               </div>
             </ul>
           </div>
@@ -205,80 +149,51 @@
 
         <!-- DETAIL & SHEET WORKSPACE -->
         <section class="content-pane">
-          <!-- WORKSPACE TABS -->
           <div class="workspace-tabs-header">
             <div class="tabs-buttons">
-              <button
-                class="tab-btn active"
-                data-tab="overview-tab"
-                id="btn-tab-overview"
-              >
+              <button class="tab-btn active" data-tab="overview-tab" id="btn-tab-overview">
                 <i data-lucide="eye"></i> Overview
               </button>
-              <button
-                class="tab-btn"
-                data-tab="details-tab"
-                id="btn-tab-details"
-              >
+              <button class="tab-btn" data-tab="details-tab" id="btn-tab-details">
                 <i data-lucide="file-edit"></i> Form Editor
               </button>
             </div>
-
             <div class="tab-actions">
-              <button
-                id="btn-toggle-preview"
-                class="btn-secondary"
-                title="Toggle Live Preview"
-              >
+              <button id="btn-toggle-preview" class="btn-secondary" title="Toggle Live Preview">
                 <i data-lucide="eye"></i> Live Preview
               </button>
             </div>
           </div>
 
-          <!-- TAB CONTENTS -->
           <div class="tab-content-container">
             <!-- OVERVIEW TAB -->
             <div id="overview-tab" class="tab-pane active">
-              <div
-                id="overview-view"
-                class="details-layout"
-                style="display: none"
-              >
+              <div id="overview-view" class="details-layout" style="display: none">
                 <div class="form-card card-m3">
                   <div class="card-header">
                     <h3><i data-lucide="building"></i> Company Overview</h3>
                   </div>
-
                   <div class="overview-grid">
                     <div class="overview-item">
                       <span class="overview-label">Company Name</span>
-                      <div class="overview-value" id="overview-company-name">
-                        -
-                      </div>
+                      <div class="overview-value" id="overview-company-name">-</div>
                     </div>
-
                     <div class="overview-item">
                       <span class="overview-label">Registration No (UEN)</span>
                       <div class="overview-value" id="overview-reg-no">-</div>
                     </div>
-
                     <div class="overview-item">
                       <span class="overview-label">Financial Year End</span>
                       <div class="overview-value" id="overview-fy-end">-</div>
                     </div>
-
                     <div class="overview-item">
                       <span class="overview-label">AGM Meeting Address</span>
                       <div class="overview-value" id="overview-address">-</div>
                     </div>
-
                     <div class="overview-item">
                       <span class="overview-label">AGM Number</span>
-                      <div class="overview-value" id="overview-agm-number">
-                        -
-                      </div>
+                      <div class="overview-value" id="overview-agm-number">-</div>
                     </div>
-
                     <div class="overview-item">
                       <span class="overview-label">AGM Meeting Date</span>
                       <div class="overview-value" id="overview-agm-date">-</div>
@@ -286,46 +201,29 @@
                   </div>
                 </div>
 
-                <!-- ACTIVE SIGNATORIES -->
                 <div class="form-card card-m3">
                   <div class="card-header">
-                    <h3><i data-lucide="users"></i> Active Signatories</h3>
+                    <h3><i data-lucide="users"></i> Directors</h3>
                   </div>
-                  <div
-                    id="overview-directors-list"
-                    class="overview-directors-list"
-                  >
-                    <!-- Populated dynamically -->
-                  </div>
+                  <div id="overview-directors-list" class="overview-directors-list"></div>
                 </div>
               </div>
 
-              <!-- EMPTY OVERVIEW VIEW -->
               <div id="overview-empty-view" class="details-empty">
                 <i data-lucide="mouse-pointer-click" class="empty-icon"></i>
                 <h2>No Company Selected</h2>
-                <p>
-                  Select a company from the left panel to review its overview.
-                </p>
+                <p>Select a company from the left panel to review its overview.</p>
               </div>
             </div>
 
             <!-- DETAILS TAB (FORM EDITOR) -->
             <div id="details-tab" class="tab-pane">
-              <div
-                id="details-view"
-                class="details-layout"
-                style="display: none"
-              >
+              <div id="details-view" class="details-layout" style="display: none">
                 <div class="form-card card-m3">
                   <div class="card-header">
                     <h3><i data-lucide="building"></i> Company Information</h3>
                     <div class="card-header-actions">
-                      <div
-                        id="ordinal-badge"
-                        class="ordinal-badge"
-                        style="display: none"
-                      >
+                      <div id="ordinal-badge" class="ordinal-badge" style="display: none">
                         <span id="ordinal-text">First AGM</span>
                       </div>
                     </div>
@@ -334,73 +232,35 @@
                   <div class="form-grid">
                     <div class="form-field full-width">
                       <label for="company-name">Company Name</label>
-                      <input
-                        type="text"
-                        id="company-name"
-                        placeholder="Enter Company Name"
-                      />
+                      <input type="text" id="company-name" placeholder="Enter Company Name" />
                     </div>
-
                     <div class="form-field">
                       <label for="reg-no">Registration No (UEN)</label>
-                      <input
-                        type="text"
-                        id="reg-no"
-                        placeholder="e.g. 201706747R"
-                      />
+                      <input type="text" id="reg-no" placeholder="e.g. 201706747R" />
                     </div>
-
                     <div class="form-field">
                       <label for="financial-year-end">Financial Year End</label>
-                      <input
-                        type="text"
-                        id="financial-year-end"
-                        placeholder="e.g. 31 December 2026"
-                      />
+                      <input type="text" id="financial-year-end" placeholder="e.g. 31 December 2026" />
                     </div>
-
                     <div class="form-field full-width">
                       <label for="address">AGM Meeting Address</label>
-                      <input
-                        type="text"
-                        id="address"
-                        placeholder="Enter Address"
-                      />
+                      <input type="text" id="address" placeholder="Enter Address" />
                     </div>
-
                     <div class="form-field">
                       <label for="agm-number">AGM Number (ordinal index)</label>
-                      <input
-                        type="number"
-                        id="agm-number"
-                        placeholder="e.g. 6"
-                      />
+                      <input type="number" id="agm-number" placeholder="e.g. 6" />
                     </div>
-
                     <div class="form-field datepicker-field">
                       <label for="agm-date">AGM Meeting Date</label>
                       <div class="datepicker-container">
-                        <!-- Readonly visual string display of formatted date -->
-                        <input
-                          type="text"
-                          id="agm-date"
-                          placeholder="e.g. 1 June 2027"
-                          readonly
-                          class="datepicker-trigger"
-                        />
-                        <!-- Hidden native HTML date input used as datepicker -->
-                        <input
-                          type="date"
-                          id="agm-date-picker"
-                          class="hidden-datepicker"
-                        />
+                        <input type="text" id="agm-date" placeholder="e.g. 1 June 2027" readonly class="datepicker-trigger" />
+                        <input type="date" id="agm-date-picker" class="hidden-datepicker" />
                         <i data-lucide="calendar" class="datepicker-icon"></i>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <!-- DIRECTORS SECTION (Checkbox List) -->
                 <div class="form-card card-m3">
                   <div class="card-header">
                     <h3><i data-lucide="users"></i> Board of Directors</h3>
@@ -410,24 +270,17 @@
                       </button>
                     </div>
                   </div>
-
-                  <div id="directors-list" class="directors-list">
-                    <!-- Directors checkboxes will load here dynamically -->
-                  </div>
+                  <div id="directors-list" class="directors-list"></div>
                 </div>
 
-                <!-- NOTES / WARNINGS BOX -->
                 <div id="warnings-box" class="warnings-box">
                   <div class="warning-header">
                     <i data-lucide="alert-triangle" class="warning-icon"></i>
                     <h4>Warnings & Integrity Checks</h4>
                   </div>
-                  <ul id="warnings-list" class="warnings-list">
-                    <!-- Warnings will load here -->
-                  </ul>
+                  <ul id="warnings-list" class="warnings-list"></ul>
                 </div>
 
-                <!-- ACTION BAR -->
                 <div class="details-action-bar">
                   <button id="btn-reread" class="btn-secondary">
                     <i data-lucide="rotate-ccw"></i> Re-read from XLSM
@@ -438,14 +291,10 @@
                 </div>
               </div>
 
-              <!-- EMPTY DETAILS VIEW -->
               <div id="details-empty-view" class="details-empty">
                 <i data-lucide="mouse-pointer-click" class="empty-icon"></i>
                 <h2>No Company Selected</h2>
-                <p>
-                  Select a company from the left panel to review details, view
-                  spreadsheet tabs, or edit fields.
-                </p>
+                <p>Select a company from the left panel to review details, view spreadsheet tabs, or edit fields.</p>
               </div>
             </div>
           </div>
@@ -455,17 +304,12 @@
         <aside id="preview-sidebar" class="preview-sidebar collapsed">
           <div class="preview-header">
             <h3><i data-lucide="eye"></i> Resolution Preview</h3>
-            <button
-              id="btn-close-preview"
-              class="btn-icon-only"
-              title="Close Preview"
-            >
+            <button id="btn-close-preview" class="btn-icon-only" title="Close Preview">
               <i data-lucide="x"></i>
             </button>
           </div>
           <div class="preview-body">
             <div class="preview-sheet-container">
-              <!-- Dynamic rendered resolution sheet -->
               <div id="preview-document" class="preview-document">
                 <div class="preview-empty-state">
                   <i data-lucide="file-text"></i>
@@ -485,36 +329,18 @@
         </div>
 
         <div class="generation-controls">
-          <!-- Parsing Progress Indicator -->
-          <div
-            id="parsing-progress-container"
-            class="progress-container"
-            style="display: none; margin-right: 12px"
-          >
+          <div id="parsing-progress-container" class="progress-container" style="display: none; margin-right: 12px">
             <div class="progress-bar-wrapper">
-              <div
-                id="parsing-progress"
-                class="progress-bar-fill"
-                style="width: 0%"
-              ></div>
+              <div id="parsing-progress" class="progress-bar-fill" style="width: 0%"></div>
             </div>
-            <span id="parsing-progress-text" class="progress-text"
-              >Loading... 0/0</span
-            >
+            <span id="parsing-progress-text" class="progress-text">Loading... 0/0</span>
           </div>
 
-          <!-- Generation Progress Indicator -->
-          <div
-            id="generation-progress-container"
-            class="progress-container"
-            style="display: none"
-          >
+          <div id="generation-progress-container" class="progress-container" style="display: none">
             <div class="progress-bar-wrapper">
               <div id="generation-progress" class="progress-bar-fill"></div>
             </div>
-            <span id="progress-text" class="progress-text"
-              >Generating 0/0...</span
-            >
+            <span id="progress-text" class="progress-text">Generating 0/0...</span>
           </div>
 
           <button id="btn-generate" class="btn-primary" disabled>
@@ -524,33 +350,39 @@
       </footer>
     </div>
 
-    <!-- DIRECTOR ROTATION HISTORY MODAL -->
+    <!-- ── MOBILE VIEW ──────────────────────────────────────────────────────── -->
+    <div id="mobile-view">
+      <div class="mobile-header">
+        <img src="/static/logo_white.png" id="mobile-logo" class="logo-img" alt="AGM Logo" />
+        <div id="mobile-sync-banner" class="mobile-sync-banner">Loading...</div>
+      </div>
+      <div class="mobile-search-bar">
+        <input type="text" id="mobile-search" placeholder="Search companies or UEN..." />
+      </div>
+      <div id="mobile-company-list" class="mobile-company-list">
+        <div class="mobile-loading">
+          <div class="spinner" style="margin:0 auto 12px;"></div>
+          <p>Loading company data...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── DIRECTOR ROTATION HISTORY MODAL ─────────────────────────────────── -->
     <div id="history-modal" class="modal-overlay" style="display: none">
       <div class="modal-content modal-m3">
         <div class="modal-header">
-          <h3>
-            <i data-lucide="history"></i> Director History & Rotation Summary
-          </h3>
+          <h3><i data-lucide="history"></i> Director History & Rotation Summary</h3>
           <button id="btn-close-modal" class="btn-close">&times;</button>
         </div>
         <div class="modal-body">
           <div class="company-meta-header">
             <h4 id="history-company-name">-</h4>
-            <p>
-              UEN: <span id="history-company-uen">-</span> | Planning Year:
-              <span id="history-planning-year">-</span>
-            </p>
+            <p>UEN: <span id="history-company-uen">-</span> | Planning Year: <span id="history-planning-year">-</span></p>
           </div>
-
-          <div
-            id="history-loading"
-            class="history-loader"
-            style="display: none"
-          >
+          <div id="history-loading" class="history-loader" style="display: none">
             <div class="spinner"></div>
             <p>Fetching history records...</p>
           </div>
-
           <div id="history-table-container" class="history-table-wrapper">
             <table class="history-table">
               <thead>
@@ -561,103 +393,102 @@
                   <th>Rotation Assessment</th>
                 </tr>
               </thead>
-              <tbody id="history-table-body">
-                <!-- Populated dynamically -->
-              </tbody>
+              <tbody id="history-table-body"></tbody>
             </table>
           </div>
-
           <div class="rotation-disclaimer">
             <i data-lucide="alert-circle" class="disclaimer-icon"></i>
-            <p>
-              <b>Rotation guideline:</b> Directors who have served 3 or more
-              consecutive financial years are highlighted with
-              <b>"Rotate?"</b> and might require rotation at the upcoming AGM.
-            </p>
+            <p><b>Rotation guideline:</b> Directors who have served 3 or more consecutive financial years are highlighted with <b>"Rotate?"</b> and might require rotation at the upcoming AGM.</p>
           </div>
         </div>
         <div class="modal-footer">
-          <button id="btn-confirm-close" class="btn-primary">
-            Close History
+          <button id="btn-confirm-close" class="btn-primary">Close History</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SYNC DIFF MODAL ──────────────────────────────────────────────────── -->
+    <div id="sync-diff-modal" class="modal-overlay" style="display: none">
+      <div class="modal-content modal-m3" style="max-width:680px">
+        <div class="modal-header">
+          <h3><i data-lucide="git-compare"></i> Cloud Data Changes Detected</h3>
+          <button id="btn-close-diff-modal" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body" id="sync-diff-body">
+          <!-- Populated dynamically -->
+        </div>
+        <div class="modal-footer">
+          <button id="btn-sync-cancel" class="btn-secondary">Keep Old Data</button>
+          <button id="btn-sync-confirm" class="btn-primary">
+            <i data-lucide="cloud-upload"></i> Update Cloud Data
           </button>
         </div>
       </div>
     </div>
 
-    <!-- SheetJS — browser-side XLSM parsing (files never leave the local disk) -->
+    <!-- SheetJS — browser-side XLSM parsing -->
+    <script
+      data-clerk-publishable-key="{{ clerk_publishable_key }}"
+      src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
+    ></script>
     <script src="/static/xlsx.full.min.js"></script>
-
-    <!-- Application Javascript Logic -->
     <script src="/static/app.js"></script>
     <script>
-      // Initialize lucide icons at load
       lucide.createIcons();
     </script>
 
-    <!-- Auth gate -->
+    <!-- Clerk publishable key from Flask template -->
     <script>
-      (function () {
-        const overlay = document.getElementById("login-overlay");
-        const input = document.getElementById("login-code-input");
-        const btn = document.getElementById("btn-login");
-        const errMsg = document.getElementById("login-error");
+      window.__CLERK_PK = "{{ clerk_publishable_key }}";
+    </script>
 
-        function showOverlay() {
+    <!-- Clerk auth gate -->
+    <script>
+      function _dismissSplash() {
+        const splash = document.getElementById("welcome-splash");
+        if (splash) {
+          splash.classList.add("splash-exit");
+          setTimeout(() => splash.remove(), 600);
+        }
+      }
+
+      (async function initClerk() {
+        try {
+          const clerk = window.Clerk;
+          await clerk.load();
+          window.__clerk = clerk;
+
+          if (!clerk.user) {
+            await clerk.redirectToSignIn({ redirectUrl: window.location.href });
+            return;
+          }
+
+          // Activate org if the user belongs to one
+          const membershipsResult = await clerk.user.getOrganizationMemberships();
+          const memberships = membershipsResult.data || [];
+          if (memberships.length > 0 && !clerk.organization) {
+            await clerk.setActive({ organization: memberships[0].organization.id });
+          }
+
+          // Fall back to user ID when no org is present (solo / dev mode)
+          window.__orgId = (clerk.organization ? clerk.organization.id : null)
+                           || clerk.user.id;
+          document.getElementById("login-overlay").style.display = "none";
+
+          // Boot the app (mobile or desktop)
+          initMobileOrDesktop();
+
+        } catch (err) {
+          console.error("Clerk init error:", err);
+          _dismissSplash();
+          const overlay = document.getElementById("login-overlay");
+          overlay.innerHTML = `
+            <div class="login-card">
+              <p style="color:var(--color-error);text-align:center;">Auth failed: ${err.message}</p>
+              <button class="btn-primary login-btn" style="margin-top:16px;" onclick="location.reload()">Retry</button>
+            </div>`;
           overlay.style.display = "flex";
-          setTimeout(() => input.focus(), 50);
         }
-
-        function hideOverlay() {
-          overlay.style.opacity = "0";
-          overlay.style.transition = "opacity 0.3s ease";
-          setTimeout(() => { overlay.style.display = "none"; }, 300);
-        }
-
-        async function attemptLogin() {
-          const code = input.value.trim();
-          if (!code) return;
-          btn.disabled = true;
-          errMsg.style.display = "none";
-          try {
-            const res = await fetch("/api/auth", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ code }),
-            });
-            if (res.ok) {
-              hideOverlay();
-            } else {
-              errMsg.style.display = "block";
-              input.value = "";
-              input.focus();
-            }
-          } catch (e) {
-            errMsg.textContent = "Network error — please try again.";
-            errMsg.style.display = "block";
-          }
-          btn.disabled = false;
-        }
-
-        btn.addEventListener("click", attemptLogin);
-        input.addEventListener("keydown", function (e) {
-          if (e.key === "Enter") attemptLogin();
-        });
-
-        // Handle 401s from any future API call — re-show login
-        const _origFetch = window.fetch;
-        window.fetch = async function (...args) {
-          const res = await _origFetch(...args);
-          if (res.status === 401 && !args[0].toString().includes("/api/auth")) {
-            showOverlay();
-          }
-          return res;
-        };
-
-        // Check auth on load
-        fetch("/api/auth/check")
-          .then((r) => r.json())
-          .then((d) => { if (!d.authenticated) showOverlay(); })
-          .catch(() => showOverlay());
       })();
     </script>
 
@@ -665,10 +496,6 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Floating Company Tooltip Popup -->
-    <div
-      id="company-tooltip"
-      class="company-tooltip"
-      style="display: none"
-    ></div>
+    <div id="company-tooltip" class="company-tooltip" style="display: none"></div>
   </body>
 </html>

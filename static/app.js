@@ -329,8 +329,6 @@ const el = {
     btnTogglePreview: document.getElementById('btn-toggle-preview'),
     btnClosePreview: document.getElementById('btn-close-preview'),
     btnThemeToggle: document.getElementById('btn-theme-toggle'),
-    btnManageTeam: document.getElementById('btn-manage-team'),
-    btnLogout: document.getElementById('btn-logout'),
     appLogo: document.getElementById('app-logo'),
     mainWorkspace: document.getElementById('main-workspace'),
     previewSidebar: document.getElementById('preview-sidebar'),
@@ -482,21 +480,55 @@ function registerEvents() {
         el.mainWorkspace.classList.remove('preview-expanded');
     });
 
-    if (el.btnManageTeam) {
-        el.btnManageTeam.addEventListener('click', () => {
-            if (!window.__clerk || !window.__clerk.organization) {
-                showToast('No active organization. Please sign out and sign in again.', 'warn');
-                return;
+    const avatarBtn = document.getElementById('btn-avatar');
+    const avatarDropdown = document.getElementById('avatar-dropdown');
+    const avatarWrapper = document.getElementById('avatar-wrapper');
+
+    if (avatarBtn) {
+        // Populate avatar: image or initials
+        const user = window.__clerk && window.__clerk.user;
+        if (user) {
+            if (user.imageUrl) {
+                avatarBtn.innerHTML = `<img src="${user.imageUrl}" alt="avatar" />`;
+            } else {
+                const full = user.fullName || '';
+                const parts = full.trim().split(/\s+/);
+                const initials = parts.length >= 2
+                    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+                    : (parts[0] ? parts[0][0].toUpperCase() : '?');
+                avatarBtn.textContent = initials;
             }
-            window.__clerk.openOrganizationProfile();
+        } else {
+            avatarBtn.textContent = '?';
+        }
+
+        avatarBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = avatarDropdown.style.display !== 'none';
+            avatarDropdown.style.display = isOpen ? 'none' : 'flex';
+            lucide.createIcons();
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!avatarWrapper.contains(e.target)) {
+                avatarDropdown.style.display = 'none';
+            }
         });
     }
 
-    if (el.btnLogout) {
-        el.btnLogout.addEventListener('click', async () => {
-            if (window.__clerk) {
-                await window.__clerk.signOut();
-            }
+    const btnManageAccount = document.getElementById('btn-manage-account');
+    if (btnManageAccount) {
+        btnManageAccount.addEventListener('click', () => {
+            avatarDropdown.style.display = 'none';
+            window.__clerk.openUserProfile();
+        });
+    }
+
+    const btnSignout = document.getElementById('btn-signout');
+    if (btnSignout) {
+        btnSignout.addEventListener('click', async () => {
+            avatarDropdown.style.display = 'none';
+            if (window.__clerk) await window.__clerk.signOut();
             location.reload();
         });
     }
