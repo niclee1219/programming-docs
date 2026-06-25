@@ -514,23 +514,23 @@ function registerEvents() {
                 avatarDropdown.style.display = 'none';
             }
         });
-    }
 
-    const btnManageAccount = document.getElementById('btn-manage-account');
-    if (btnManageAccount) {
-        btnManageAccount.addEventListener('click', () => {
-            avatarDropdown.style.display = 'none';
-            window.__clerk.openUserProfile();
-        });
-    }
+        const btnManageAccount = document.getElementById('btn-manage-account');
+        if (btnManageAccount) {
+            btnManageAccount.addEventListener('click', () => {
+                avatarDropdown.style.display = 'none';
+                if (window.__clerk) window.__clerk.openUserProfile();
+            });
+        }
 
-    const btnSignout = document.getElementById('btn-signout');
-    if (btnSignout) {
-        btnSignout.addEventListener('click', async () => {
-            avatarDropdown.style.display = 'none';
-            if (window.__clerk) await window.__clerk.signOut();
-            location.reload();
-        });
+        const btnSignout = document.getElementById('btn-signout');
+        if (btnSignout) {
+            btnSignout.addEventListener('click', async () => {
+                avatarDropdown.style.display = 'none';
+                if (window.__clerk) await window.__clerk.signOut();
+                location.reload();
+            });
+        }
     }
 
     el.searchFilter.addEventListener('input', filterCompanyList);
