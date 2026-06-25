@@ -1,8 +1,7 @@
 """
 AGM Generator — Director History Tracker
-Stores which directors appeared on each company's AGM in which year.
-Rewritten to use SQLAlchemy instead of JSON file persistence.
-Public interface is identical to the local version.
+Rewritten to use supabase-py instead of SQLAlchemy.
+Public interface is identical to the original.
 """
 
 import json
@@ -10,26 +9,20 @@ from datetime import datetime
 
 
 class DirectorHistory:
-    """
-    Per-user director history backed by the director_history table.
-    Pass the SQLAlchemy db instance and a user_id on construction.
-    """
+    """Per-user director history backed by the director_history table."""
 
-    def __init__(self, db, user_id: str = "default"):
-        self._db = db
+    def __init__(self, supabase, user_id: str = "default"):
+        self._db = supabase
         self._user_id = user_id
-
-    # ------------------------------------------------------------------
-    # Read
-    # ------------------------------------------------------------------
 
     def get_company_history(self, reg_no: str) -> dict:
         """Return {year_str: [names]} for a company."""
-        from models import DirectorHistoryEntry
-        entries = DirectorHistoryEntry.query.filter_by(
-            user_id=self._user_id, reg_no=str(reg_no)
-        ).all()
-        return {e.fy_year: json.loads(e.directors) for e in entries}
+        result = self._db.table("director_history") \
+            .select("fy_year, directors") \
+            .eq("user_id", self._user_id) \
+            .eq("reg_no", str(reg_no)) \
+            .execute()
+        return {r["fy_year"]: json.loads(r["directors"]) for r in (result.data or [])}
 
     def years_served(self, reg_no: str, director_name: str) -> list:
         history = self.get_company_history(reg_no)
@@ -80,29 +73,16 @@ class DirectorHistory:
         result.sort(key=lambda x: (-x["consecutive"], x["name"]))
         return result
 
-    # ------------------------------------------------------------------
-    # Write
-    # ------------------------------------------------------------------
-
     def record(self, reg_no: str, year: int, directors: list):
-        from models import DirectorHistoryEntry
         reg_no = str(reg_no).strip()
         year_str = str(year)
         clean = [d.strip() for d in directors if d.strip()]
-
-        entry = DirectorHistoryEntry.query.filter_by(
-            user_id=self._user_id, reg_no=reg_no, fy_year=year_str
-        ).first()
-
-        if entry:
-            entry.directors = json.dumps(clean)
-        else:
-            entry = DirectorHistoryEntry(
-                user_id=self._user_id,
-                reg_no=reg_no,
-                fy_year=year_str,
-                directors=json.dumps(clean),
-            )
-            self._db.session.add(entry)
-
-        self._db.session.commit()
+        self._db.table("director_history") \
+            .upsert({
+                "user_id": self._user_id,
+                "reg_no": reg_no,
+                "fy_year": year_str,
+                "directors": json.dumps(clean),
+                "updated_at": datetime.utcnow().isoformat(),
+            }, on_conflict="user_id,reg_no,fy_year") \
+            .execute()

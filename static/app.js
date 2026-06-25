@@ -459,6 +459,7 @@ function initMobileOrDesktop() {
         }
 
         loadMobileView();
+        initMobileAvatar();
     } else {
         // Desktop: boot normally
         loadSettings();
@@ -524,42 +525,14 @@ function registerEvents() {
     const avatarDropdown = document.getElementById('avatar-dropdown');
     const avatarWrapper = document.getElementById('avatar-wrapper');
 
-    if (avatarBtn) {
-        // Populate avatar: image or initials
-        const user = window.__clerk && window.__clerk.user;
-        if (user) {
-            if (user.imageUrl) {
-                avatarBtn.innerHTML = `<img src="${user.imageUrl}" alt="avatar" />`;
-            } else {
-                const full = user.fullName || '';
-                const parts = full.trim().split(/\s+/);
-                const initials = parts.length >= 2
-                    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-                    : (parts[0] ? parts[0][0].toUpperCase() : '?');
-                avatarBtn.textContent = initials;
-            }
-        } else {
-            avatarBtn.textContent = '?';
-        }
-
-        avatarBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const isOpen = avatarDropdown.style.display !== 'none';
-            avatarDropdown.style.display = isOpen ? 'none' : 'flex';
-            lucide.createIcons();
-        });
-
-        document.addEventListener('click', (e) => {
-            if (!avatarWrapper.contains(e.target)) {
-                avatarDropdown.style.display = 'none';
-            }
-        });
+    if (avatarBtn && avatarDropdown && avatarWrapper) {
+        _populateAvatar(avatarBtn, avatarDropdown, avatarWrapper);
 
         const btnManageAccount = document.getElementById('btn-manage-account');
         if (btnManageAccount) {
             btnManageAccount.addEventListener('click', () => {
                 avatarDropdown.style.display = 'none';
-                if (window.__clerk) window.__clerk.openUserProfile();
+                _openUserProfile();
             });
         }
 
@@ -658,6 +631,86 @@ function registerEvents() {
 }
 
 // ------------------------------------------------------------------ #
+// Avatar helpers (shared desktop + mobile)
+// ------------------------------------------------------------------ #
+
+function _openUserProfile() {
+    if (!window.__clerk) return;
+    const overlay = document.getElementById('clerk-profile-overlay');
+    const container = document.getElementById('clerk-profile-container');
+    if (!overlay || !container) return;
+
+    overlay.style.display = 'flex';
+    window.__clerk.mountUserProfile(container);
+}
+
+function _closeUserProfile() {
+    const overlay = document.getElementById('clerk-profile-overlay');
+    const container = document.getElementById('clerk-profile-container');
+    if (!overlay || !container) return;
+    if (window.__clerk) window.__clerk.unmountUserProfile(container);
+    overlay.style.display = 'none';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const backdrop = document.getElementById('clerk-profile-backdrop');
+    if (backdrop) backdrop.addEventListener('click', _closeUserProfile);
+});
+
+function _populateAvatar(btnEl, dropdownEl, wrapperEl) {
+    const user = window.__clerk && window.__clerk.user;
+    if (user) {
+        if (user.imageUrl) {
+            btnEl.innerHTML = `<img src="${user.imageUrl}" alt="avatar" />`;
+        } else {
+            const full = user.fullName || '';
+            const parts = full.trim().split(/\s+/);
+            const initials = parts.length >= 2
+                ? parts[0][0] + parts[parts.length - 1][0]
+                : (parts[0] ? parts[0][0] : '?');
+            btnEl.textContent = initials.toUpperCase();
+        }
+    } else {
+        btnEl.textContent = '?';
+    }
+
+    btnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = dropdownEl.style.display !== 'none';
+        dropdownEl.style.display = isOpen ? 'none' : 'flex';
+    });
+    document.addEventListener('click', (e) => {
+        if (!wrapperEl.contains(e.target)) dropdownEl.style.display = 'none';
+    });
+    lucide.createIcons({ nodes: [wrapperEl] });
+}
+
+function initMobileAvatar() {
+    const btnEl = document.getElementById('mobile-btn-avatar');
+    const dropdownEl = document.getElementById('mobile-avatar-dropdown');
+    const wrapperEl = document.getElementById('mobile-avatar-wrapper');
+    if (!btnEl || !dropdownEl || !wrapperEl) return;
+
+    _populateAvatar(btnEl, dropdownEl, wrapperEl);
+
+    const btnManage = document.getElementById('mobile-btn-manage-account');
+    if (btnManage) {
+        btnManage.addEventListener('click', () => {
+            dropdownEl.style.display = 'none';
+            _openUserProfile();
+        });
+    }
+    const btnSignout = document.getElementById('mobile-btn-signout');
+    if (btnSignout) {
+        btnSignout.addEventListener('click', async () => {
+            dropdownEl.style.display = 'none';
+            if (window.__clerk) await window.__clerk.signOut();
+            location.reload();
+        });
+    }
+}
+
+// ------------------------------------------------------------------ #
 // Date Conversion Utilities
 // ------------------------------------------------------------------ #
 
@@ -733,10 +786,14 @@ function showToast(message, type = 'info', duration = 3500) {
 async function loadSettings() {
     try {
         const response = await authFetch('/api/settings');
+        if (!response.ok) {
+            console.warn('Settings load failed:', response.status);
+            return;
+        }
         const s = await response.json();
         state.settings = s;
     } catch (err) {
-        showStatus('Failed to load settings from server.', 'error');
+        console.warn('Settings load error:', err);
     }
 }
 

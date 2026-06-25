@@ -355,6 +355,17 @@
       <div class="mobile-header">
         <img src="/static/logo_white.png" id="mobile-logo" class="logo-img" alt="AGM Logo" />
         <div id="mobile-sync-banner" class="mobile-sync-banner">Loading...</div>
+        <div class="avatar-wrapper" id="mobile-avatar-wrapper">
+          <button id="mobile-btn-avatar" class="btn-avatar" title="Account"></button>
+          <div id="mobile-avatar-dropdown" class="avatar-dropdown" style="display:none;">
+            <button id="mobile-btn-manage-account" class="avatar-dropdown-item">
+              <i data-lucide="user"></i> Manage Account
+            </button>
+            <button id="mobile-btn-signout" class="avatar-dropdown-item avatar-dropdown-item--danger">
+              <i data-lucide="log-out"></i> Sign Out
+            </button>
+          </div>
+        </div>
       </div>
       <div class="mobile-tab-toggle">
         <button id="mobile-tab-companies" class="mobile-tab-btn active">
@@ -506,5 +517,11 @@
 
     <!-- Floating Company Tooltip Popup -->
     <div id="company-tooltip" class="company-tooltip" style="display: none"></div>
+
+    <!-- Clerk User Profile Modal -->
+    <div id="clerk-profile-overlay" style="display:none;">
+      <div id="clerk-profile-backdrop"></div>
+      <div id="clerk-profile-container"></div>
+    </div>
   </body>
 </html>

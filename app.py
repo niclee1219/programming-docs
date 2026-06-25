@@ -1,12 +1,10 @@
 """
 AGM Generator — Flask Application (Web-Native)
-Serves the UI and handles server-side concerns:
-  - Per-user settings and field mapping persistence (SQLAlchemy)
-  - Director history storage and rotation queries
-  - In-memory DOCX generation with zip download response
-File reading and .xlsm extraction happen entirely in the browser via SheetJS.
+Auth: Clerk Organizations (JWT via PyJWT + JWKS)
+DB:   Supabase (PostgreSQL via supabase-py, service role key)
 """
 
+import base64
 import io
 import json
 import os
@@ -14,81 +12,106 @@ import re
 import zipfile
 from datetime import datetime, timedelta
 from functools import wraps
-from pathlib import Path
 
+import flask
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request, send_file, session
+from flask import Flask, g, jsonify, render_template, request, send_file
+from supabase import create_client, Client as SupabaseClient
+import jwt as pyjwt
+from jwt import PyJWKClient
 
-from models import db, UserSettings, FieldMapping, DirectorHistoryEntry
 from generator import AGMGenerator
 from history import DirectorHistory
 
 load_dotenv()
 
-app = Flask(__name__, instance_path="/tmp")
-_db_url = os.environ.get("DATABASE_URL", "sqlite:////tmp/agm.db")
-# Vercel Postgres URLs use postgres:// — SQLAlchemy needs postgresql://
-if _db_url.startswith("postgres://"):
-    _db_url = _db_url.replace("postgres://", "postgresql://", 1)
-app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
+app = Flask(__name__)
 
-db.init_app(app)
+# ── Supabase client (service role — never exposed to browser) ──────────────── #
+_supabase: SupabaseClient = create_client(
+    os.environ["SUPABASE_URL"],
+    os.environ["SUPABASE_SERVICE_KEY"],
+)
 
-with app.app_context():
-    db.create_all()
+# ── Clerk JWT verification ─────────────────────────────────────────────────── #
+_jwks_client: PyJWKClient | None = None
+_clerk_frontend_api: str = ""
+
+
+def _get_clerk_frontend_api() -> str:
+    global _clerk_frontend_api
+    if not _clerk_frontend_api:
+        pk = os.environ.get("CLERK_PUBLISHABLE_KEY", "")
+        try:
+            # pk format: pk_test_<base64url> or pk_live_<base64url>
+            # base64url decodes to "{frontend_api_domain}$"
+            b64 = pk.split("_", 2)[2]
+            padding = 4 - len(b64) % 4
+            if padding != 4:
+                b64 += "=" * padding
+            _clerk_frontend_api = base64.b64decode(b64).decode("utf-8").rstrip("$")
+        except Exception:
+            _clerk_frontend_api = os.environ.get("CLERK_FRONTEND_API", "")
+    return _clerk_frontend_api
+
+
+def _get_jwks_client() -> PyJWKClient:
+    global _jwks_client
+    if _jwks_client is None:
+        frontend_api = _get_clerk_frontend_api()
+        _jwks_client = PyJWKClient(
+            f"https://{frontend_api}/.well-known/jwks.json",
+            cache_keys=True,
+        )
+    return _jwks_client
+
+
+def _decode_token(token: str) -> dict:
+    client = _get_jwks_client()
+    signing_key = client.get_signing_key_from_jwt(token)
+    issuer = f"https://{_get_clerk_frontend_api()}"
+    return pyjwt.decode(
+        token,
+        signing_key.key,
+        algorithms=["RS256"],
+        options={"verify_aud": False},
+        issuer=issuer,
+        leeway=timedelta(seconds=10),
+    )
 
 
 def _require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not session.get("authenticated"):
+        token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        if not token:
             return jsonify({"error": "Unauthorized"}), 401
+        try:
+            payload = _decode_token(token)
+            g.clerk_payload = payload
+        except Exception as exc:
+            return jsonify({"error": "Unauthorized", "detail": str(exc)}), 401
         return f(*args, **kwargs)
     return decorated
 
 
 def _user_id() -> str:
-    # Stub: returns 'default' until Clerk JWT verification is wired in.
-    # Replace with: return verify_clerk_token(request.headers.get('Authorization'))
-    return request.headers.get("X-User-Id", "default")
+    return g.clerk_payload.get("sub", "unknown")
 
 
-# ------------------------------------------------------------------ #
-# Routes
-# ------------------------------------------------------------------ #
+def _org_id() -> str:
+    # Prefer org_id from token; fall back to user sub for solo/dev use
+    return g.clerk_payload.get("org_id") or g.clerk_payload.get("sub", "unknown")
+
+
+# ── Routes ─────────────────────────────────────────────────────────────────── #
 
 @app.route("/")
 def index():
-    return render_template("index.html")
-
-
-@app.route("/api/auth", methods=["POST"])
-def login():
-    login_code = os.environ.get("LOGIN_CODE", "")
-    if not login_code:
-        return jsonify({"error": "LOGIN_CODE not configured on server"}), 500
-    submitted = (request.json or {}).get("code", "").strip()
-    if submitted == login_code:
-        session.permanent = True
-        session["authenticated"] = True
-        return jsonify({"success": True})
-    return jsonify({"error": "Invalid code"}), 401
-
-
-@app.route("/api/auth/check", methods=["GET"])
-def auth_check():
-    return jsonify({"authenticated": bool(session.get("authenticated"))})
-
-
-@app.route("/api/auth/logout", methods=["POST"])
-def logout():
-    session.clear()
-    return jsonify({"success": True})
+    return render_template(
+        "index.html",
+        clerk_publishable_key=os.environ.get("CLERK_PUBLISHABLE_KEY", ""),
+    )
 
 
 @app.route("/api/settings", methods=["GET", "POST"])
@@ -96,18 +119,21 @@ def logout():
 def manage_settings():
     uid = _user_id()
     if request.method == "GET":
-        row = UserSettings.query.filter_by(user_id=uid).first()
+        result = _supabase.table("user_settings") \
+            .select("fy_year") \
+            .eq("user_id", uid) \
+            .maybe_single() \
+            .execute()
+        row = result.data if result is not None else None
         return jsonify({
-            "agm_financial_year": row.fy_year if row else str(datetime.now().year - 1),
+            "agm_financial_year": row["fy_year"] if row else str(datetime.now().year - 1),
         })
     else:
         payload = request.json or {}
-        row = UserSettings.query.filter_by(user_id=uid).first()
-        if not row:
-            row = UserSettings(user_id=uid)
-            db.session.add(row)
-        row.fy_year = payload.get("agm_financial_year", row.fy_year)
-        db.session.commit()
+        fy_year = payload.get("agm_financial_year", "")
+        _supabase.table("user_settings") \
+            .upsert({"user_id": uid, "fy_year": fy_year, "updated_at": datetime.utcnow().isoformat()}, on_conflict="user_id") \
+            .execute()
         return jsonify({"success": True})
 
 
@@ -120,28 +146,30 @@ def field_mappings():
         filename = request.args.get("filename", "").strip()
         if not filename:
             return jsonify({"error": "filename is required"}), 400
-        rows = FieldMapping.query.filter_by(user_id=uid, filename=filename).all()
-        mappings = {r.field: {"cell": r.cell} for r in rows}
+        result = _supabase.table("field_mappings") \
+            .select("field, cell") \
+            .eq("user_id", uid) \
+            .eq("filename", filename) \
+            .execute()
+        mappings = {r["field"]: {"cell": r["cell"]} for r in (result.data or [])}
         return jsonify({"mappings": mappings})
 
     else:
         payload = request.json or {}
         filename = payload.get("filename", "").strip()
-        mappings = payload.get("mappings", {})   # {field: cell_ref}
+        mappings = payload.get("mappings", {})
         if not filename:
             return jsonify({"error": "filename is required"}), 400
 
-        for field, cell in mappings.items():
-            row = FieldMapping.query.filter_by(
-                user_id=uid, filename=filename, field=field
-            ).first()
-            if row:
-                row.cell = cell
-            else:
-                db.session.add(FieldMapping(
-                    user_id=uid, filename=filename, field=field, cell=cell
-                ))
-        db.session.commit()
+        now = datetime.utcnow().isoformat()
+        rows = [
+            {"user_id": uid, "filename": filename, "field": field, "cell": cell, "updated_at": now}
+            for field, cell in mappings.items()
+        ]
+        if rows:
+            _supabase.table("field_mappings") \
+                .upsert(rows, on_conflict="user_id,filename,field") \
+                .execute()
         return jsonify({"success": True})
 
 
@@ -160,7 +188,7 @@ def get_director_history():
         current_year = datetime.now().year - 1
 
     try:
-        history = DirectorHistory(db, uid)
+        history = DirectorHistory(_supabase, uid)
         summary = history.rotation_summary(reg_no, current_year)
         return jsonify({"history": summary})
     except Exception as e:
@@ -179,7 +207,7 @@ def generate_resolutions():
         return jsonify({"error": "No companies provided."}), 400
 
     generator = AGMGenerator()
-    history = DirectorHistory(db, uid)
+    history = DirectorHistory(_supabase, uid)
 
     zip_buffer = io.BytesIO()
     results = []
@@ -235,6 +263,117 @@ def generate_resolutions():
         as_attachment=True,
         download_name=zip_name,
     )
+
+
+# ── Sync endpoints ─────────────────────────────────────────────────────────── #
+
+_COMPARE_FIELDS = [
+    "company_name", "reg_no", "address",
+    "financial_year_end", "agm_number", "agm_date",
+]
+
+
+@app.route("/api/sync", methods=["POST"])
+@_require_auth
+def sync_preview():
+    """Phase 1: compute diffs vs stored snapshots. No writes."""
+    org = _org_id()
+    payload = request.json or {}
+    companies = payload.get("companies", [])
+    if not companies:
+        return jsonify({"diffs": [], "total": 0})
+
+    filenames = [c["filename"] for c in companies]
+    existing_result = _supabase.table("company_snapshots") \
+        .select("filename, company_name, reg_no, address, financial_year_end, agm_number, agm_date, directors") \
+        .eq("org_id", org) \
+        .in_("filename", filenames) \
+        .execute()
+    existing = {r["filename"]: r for r in (existing_result.data or [])}
+
+    diffs = []
+    for company in companies:
+        fn = company["filename"]
+        old = existing.get(fn)
+        if not old:
+            continue  # New company — no diff to show
+
+        changes = []
+        for field in _COMPARE_FIELDS:
+            old_val = (old.get(field) or "").strip()
+            new_val = (company.get(field) or "").strip()
+            if old_val != new_val:
+                changes.append({"field": field, "old": old_val, "new": new_val})
+
+        old_dirs = sorted(d.strip() for d in (old.get("directors") or []) if d.strip())
+        new_dirs = sorted(d.strip() for d in (company.get("all_directors") or []) if d.strip())
+        if old_dirs != new_dirs:
+            changes.append({
+                "field": "directors",
+                "old": ", ".join(old_dirs),
+                "new": ", ".join(new_dirs),
+            })
+
+        if changes:
+            diffs.append({
+                "filename": fn,
+                "company_name": company.get("company_name") or fn,
+                "changes": changes,
+            })
+
+    return jsonify({"diffs": diffs, "total": len(companies)})
+
+
+@app.route("/api/sync/confirm", methods=["POST"])
+@_require_auth
+def sync_confirm():
+    """Phase 2: upsert all company snapshots."""
+    org = _org_id()
+    uid = _user_id()
+    payload = request.json or {}
+    companies = payload.get("companies", [])
+    user_name = g.clerk_payload.get("email", "") or g.clerk_payload.get("sub", "")
+
+    rows = []
+    for c in companies:
+        rows.append({
+            "org_id": org,
+            "filename": c["filename"],
+            "reg_no": c.get("reg_no", ""),
+            "company_name": c.get("company_name", ""),
+            "address": c.get("address", ""),
+            "financial_year_end": c.get("financial_year_end", ""),
+            "agm_number": c.get("agm_number", ""),
+            "agm_date": c.get("agm_date", ""),
+            "directors": c.get("all_directors") or c.get("directors") or [],
+            "selected_directors": c.get("selected_directors") or [],
+            "last_scanned_at": datetime.utcnow().isoformat(),
+            "last_scanned_by_name": user_name,
+            "last_scanned_by_id": uid,
+        })
+
+    if rows:
+        _supabase.table("company_snapshots") \
+            .upsert(rows, on_conflict="org_id,filename") \
+            .execute()
+
+    return jsonify({"synced": len(rows)})
+
+
+@app.route("/api/companies", methods=["GET"])
+@_require_auth
+def get_companies():
+    """Mobile read: all company snapshots for the active org."""
+    org = _org_id()
+    result = _supabase.table("company_snapshots") \
+        .select(
+            "filename, company_name, reg_no, address, financial_year_end, "
+            "agm_number, agm_date, directors, last_scanned_at, last_scanned_by_name"
+        ) \
+        .eq("org_id", org) \
+        .order("company_name") \
+        .execute()
+    return jsonify({"companies": result.data or []})
 
 
 if __name__ == "__main__":
