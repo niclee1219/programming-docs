@@ -433,6 +433,7 @@ function initMobileOrDesktop() {
                 mobileCompanyList.style.display = '';
                 mobilePeopleList.style.display = 'none';
                 if (mobileSearch) mobileSearch.placeholder = 'Search companies or UEN...';
+                renderMobileCards(_mobileCompaniesCache, mobileSearch ? mobileSearch.value : '');
             });
 
             tabPeople.addEventListener('click', () => {
@@ -1108,8 +1109,11 @@ async function loadMobileView() {
         }
     } catch (err) {
         console.error('loadMobileView error:', err);
-        if (listEl) {
-            listEl.innerHTML = `<p style="padding:20px;color:var(--color-error);">Failed to load: ${err.message}</p>`;
+        const activeList = _mobileViewMode === 'people'
+            ? document.getElementById('mobile-people-list')
+            : listEl;
+        if (activeList) {
+            activeList.innerHTML = `<p style="padding:20px;color:var(--color-error);">Failed to load: ${err.message}</p>`;
         }
     }
 }
@@ -1132,6 +1136,8 @@ function renderMobilePeople(query) {
     const listEl = document.getElementById('mobile-people-list');
     if (!listEl) return;
 
+    const esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
     const q = (query || '').toLowerCase().trim();
     const sortedNames = Object.keys(_mobilePeopleCache).sort((a, b) => a.localeCompare(b));
 
@@ -1144,7 +1150,7 @@ function renderMobilePeople(query) {
     if (filtered.length === 0) {
         listEl.innerHTML = `
             <div class="mobile-loading">
-                <p>${q ? `No directors matching "${query}"` : 'No directors found. Sync companies first.'}</p>
+                <p>${q ? `No directors matching "${esc(query)}"` : 'No directors found. Sync companies first.'}</p>
             </div>`;
         return;
     }
@@ -1155,16 +1161,16 @@ function renderMobilePeople(query) {
         return `
             <div class="mobile-person-item" id="mperson-${idx}">
                 <div class="mobile-person-header" onclick="toggleMobilePerson(${idx})">
-                    <span class="mobile-person-name">${name}</span>
+                    <span class="mobile-person-name">${esc(name)}</span>
                     <span class="mobile-person-count">${count}</span>
                     <i data-lucide="chevron-down" class="mobile-person-chevron" id="mpchevron-${idx}"></i>
                 </div>
                 <div class="mobile-person-companies" id="mpcompanies-${idx}">
-                    ${companies.map(c => `<div class="mobile-person-company">${c}</div>`).join('')}
+                    ${companies.map(c => `<div class="mobile-person-company">${esc(c)}</div>`).join('')}
                 </div>
             </div>`;
     }).join('');
-    lucide.createIcons();
+    lucide.createIcons({ elements: Array.from(listEl.querySelectorAll('[data-lucide]')) });
 }
 
 function toggleMobilePerson(idx) {
