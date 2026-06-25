@@ -51,7 +51,6 @@ const SCALAR_FIELDS = ['company_name', 'reg_no', 'address', 'financial_year_end'
 function getCellValue(ws, ref) {
     const cell = ws[ref];
     if (!cell || cell.v === undefined || cell.v === null) return '';
-    // cellDates:true means date cells arrive as JS Date objects
     if (cell.v instanceof Date) return cell.v;
     return String(cell.v).trim();
 }
@@ -89,12 +88,11 @@ function findSheet(wb, candidates) {
 }
 
 function keywordSearchSheet(ws) {
-    // Returns {field: {value, cell}} for all found fields via keyword proximity
     const results = {};
     if (!ws || !ws['!ref']) return results;
 
     const range = XLSX.utils.decode_range(ws['!ref']);
-    const maxRow = Math.min(range.e.r, 79);  // cap at first 80 rows
+    const maxRow = Math.min(range.e.r, 79);
 
     for (let r = range.s.r; r <= maxRow; r++) {
         for (let c = range.s.c; c <= range.e.c; c++) {
@@ -104,10 +102,9 @@ function keywordSearchSheet(ws) {
             const label = String(cell.v).trim().toLowerCase();
 
             for (const [field, keywords] of Object.entries(FIELD_KEYWORDS)) {
-                if (results[field]) continue; // already found
+                if (results[field]) continue;
                 for (const kw of keywords) {
                     if (label.includes(kw)) {
-                        // Check right (+1, +2 cols), then below
                         for (const offset of [1, 2]) {
                             const adjAddr = XLSX.utils.encode_cell({r, c: c + offset});
                             const adj = ws[adjAddr];
@@ -133,12 +130,11 @@ function keywordSearchSheet(ws) {
 }
 
 function readDirectorsFromSheet(wb) {
-    // Tier 1: dedicated Export sheet, column A from row 4
     const exportName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'export');
     if (exportName) {
         const ws = wb.Sheets[exportName];
         const directors = [];
-        let row = 3; // 0-indexed row 4
+        let row = 3;
         while (row < 200) {
             const addr = XLSX.utils.encode_cell({r: row, c: 0});
             const cell = ws[addr];
@@ -151,7 +147,6 @@ function readDirectorsFromSheet(wb) {
         if (directors.length > 0) return directors;
     }
 
-    // Tier 2: keyword search for directors header, read down from there
     const ws = findSheet(wb, SHEET_CANDIDATES);
     if (!ws || !ws['!ref']) return [];
 
@@ -194,7 +189,6 @@ async function extractCompanyData(fileHandle, filename, savedMappings) {
         directors: [], errors: [],
     };
 
-    // ---- Tier 1: Key Information sheet ----
     const keyInfoName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'key information');
     let tier1ok = false;
     if (keyInfoName) {
@@ -207,7 +201,6 @@ async function extractCompanyData(fileHandle, filename, savedMappings) {
         tier1ok = true;
     }
 
-    // Fields still missing after tier 1
     const missing = SCALAR_FIELDS.filter(f => f !== 'agm_number' && !result[f]);
 
     if (!tier1ok || missing.length > 0) {
@@ -215,7 +208,6 @@ async function extractCompanyData(fileHandle, filename, savedMappings) {
         const learnedMappings = {};
 
         if (ws) {
-            // ---- Tier 2: Saved mappings ----
             const fieldsToTry = tier1ok ? missing : SCALAR_FIELDS;
             for (const field of fieldsToTry) {
                 if (result[field]) continue;
@@ -229,7 +221,6 @@ async function extractCompanyData(fileHandle, filename, savedMappings) {
                 }
             }
 
-            // ---- Tier 3: Keyword search ----
             const kwResults = keywordSearchSheet(ws);
             for (const field of fieldsToTry) {
                 if (result[field]) continue;
@@ -241,7 +232,6 @@ async function extractCompanyData(fileHandle, filename, savedMappings) {
                 }
             }
 
-            // ---- Default cell fallbacks ----
             for (const field of fieldsToTry) {
                 if (result[field]) continue;
                 for (const ref of (DEFAULT_CELLS[field] || [])) {
@@ -259,21 +249,42 @@ async function extractCompanyData(fileHandle, filename, savedMappings) {
             }
         }
 
-        // Persist newly learned mappings server-side
         if (Object.keys(learnedMappings).length > 0) {
-            fetch('/api/mappings', {
+            authFetch('/api/mappings', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({filename, mappings: learnedMappings}),
             }).catch(() => {});
         }
     }
 
-    // ---- Directors ----
     result.directors = readDirectorsFromSheet(wb);
     if (result.directors.length === 0) result.errors.push('No directors found');
 
     return result;
+}
+
+// ------------------------------------------------------------------ #
+// Authenticated Fetch Helper
+// ------------------------------------------------------------------ #
+
+async function authFetch(url, options = {}) {
+    const session = window.__clerk?.session;
+    if (!session) throw new Error('No active Clerk session');
+
+    const tokenPromise = session.getToken();
+    const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Token fetch timed out')), 8000)
+    );
+    const token = await Promise.race([tokenPromise, timeout]);
+
+    return fetch(url, {
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            ...(options.headers || {}),
+        },
+    });
 }
 
 // ------------------------------------------------------------------ #
@@ -282,7 +293,7 @@ async function extractCompanyData(fileHandle, filename, savedMappings) {
 
 const state = {
     settings: { agm_financial_year: String(new Date().getFullYear() - 1) },
-    companies: {},    // key: filename -> { path, filename, status, checked, data: {} }
+    companies: {},
     selectedPath: null,
     activeTab: 'overview-tab',
     searchMode: 'companies',
@@ -291,11 +302,12 @@ const state = {
     queue: [],
     activeWorkers: 0,
     MAX_WORKERS: 2,
-    dirHandle: null,          // FileSystemDirectoryHandle from showDirectoryPicker
-    fileHandles: {},          // filename -> FileSystemFileHandle
+    dirHandle: null,
+    fileHandles: {},
+    syncFired: false,   // prevents double-fire of auto-sync per scan
 };
 
-// DOM Elements
+// DOM Elements (desktop app)
 const el = {
     xlsmFolder: document.getElementById('xlsm-folder'),
     btnBrowseXlsm: document.getElementById('btn-browse-xlsm'),
@@ -317,6 +329,8 @@ const el = {
     btnTogglePreview: document.getElementById('btn-toggle-preview'),
     btnClosePreview: document.getElementById('btn-close-preview'),
     btnThemeToggle: document.getElementById('btn-theme-toggle'),
+    btnManageTeam: document.getElementById('btn-manage-team'),
+    btnLogout: document.getElementById('btn-logout'),
     appLogo: document.getElementById('app-logo'),
     mainWorkspace: document.getElementById('main-workspace'),
     previewSidebar: document.getElementById('preview-sidebar'),
@@ -381,17 +395,45 @@ const ORDINALS = {
 
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
-    loadSettings();
-    registerEvents();
+    // loadSettings and registerEvents are called from initMobileOrDesktop after Clerk auth resolves
+});
 
-    setTimeout(() => {
+// Called from the Clerk auth gate in index.html once the user is authenticated
+function initMobileOrDesktop() {
+    if (window.innerWidth < 768) {
+        // Mobile: hide desktop app, show read-only mobile view
+        document.querySelector('.app-container').style.display = 'none';
+        const mobileView = document.getElementById('mobile-view');
+        if (mobileView) mobileView.style.display = 'flex';
+
+        // Apply theme logo to mobile header
+        const mobileLogo = document.getElementById('mobile-logo');
+        if (mobileLogo) {
+            const isLight = document.body.classList.contains('light-theme');
+            mobileLogo.src = isLight ? '/static/logo_black.png' : '/static/logo_white.png';
+        }
+
+        // Dismiss the welcome splash before loading data
         const splash = document.getElementById('welcome-splash');
         if (splash) {
             splash.classList.add('splash-exit');
             setTimeout(() => splash.remove(), 600);
         }
-    }, 1500);
-});
+
+        loadMobileView();
+    } else {
+        // Desktop: boot normally
+        loadSettings();
+        registerEvents();
+        setTimeout(() => {
+            const splash = document.getElementById('welcome-splash');
+            if (splash) {
+                splash.classList.add('splash-exit');
+                setTimeout(() => splash.remove(), 600);
+            }
+        }, 800);
+    }
+}
 
 function initTheme() {
     const savedTheme = localStorage.getItem('theme');
@@ -400,11 +442,11 @@ function initTheme() {
 
     if (savedTheme === 'light') {
         document.body.classList.add('light-theme');
-        el.appLogo.src = '/static/logo_black.png';
+        if (el.appLogo) el.appLogo.src = '/static/logo_black.png';
         toggleBtn.innerHTML = '<i data-lucide="moon"></i> <span class="theme-label">Dark Mode</span>';
     } else {
         document.body.classList.remove('light-theme');
-        el.appLogo.src = '/static/logo_white.png';
+        if (el.appLogo) el.appLogo.src = '/static/logo_white.png';
         toggleBtn.innerHTML = '<i data-lucide="sun"></i> <span class="theme-label">Light Mode</span>';
     }
     lucide.createIcons();
@@ -416,10 +458,10 @@ function toggleTheme() {
     const toggleBtn = document.getElementById('btn-theme-toggle');
     if (!toggleBtn) return;
     if (isLight) {
-        el.appLogo.src = '/static/logo_black.png';
+        if (el.appLogo) el.appLogo.src = '/static/logo_black.png';
         toggleBtn.innerHTML = '<i data-lucide="moon"></i> <span class="theme-label">Dark Mode</span>';
     } else {
-        el.appLogo.src = '/static/logo_white.png';
+        if (el.appLogo) el.appLogo.src = '/static/logo_white.png';
         toggleBtn.innerHTML = '<i data-lucide="sun"></i> <span class="theme-label">Light Mode</span>';
     }
     lucide.createIcons();
@@ -439,6 +481,25 @@ function registerEvents() {
     el.btnClosePreview.addEventListener('click', () => {
         el.mainWorkspace.classList.remove('preview-expanded');
     });
+
+    if (el.btnManageTeam) {
+        el.btnManageTeam.addEventListener('click', () => {
+            if (!window.__clerk || !window.__clerk.organization) {
+                showToast('No active organization. Please sign out and sign in again.', 'warn');
+                return;
+            }
+            window.__clerk.openOrganizationProfile();
+        });
+    }
+
+    if (el.btnLogout) {
+        el.btnLogout.addEventListener('click', async () => {
+            if (window.__clerk) {
+                await window.__clerk.signOut();
+            }
+            location.reload();
+        });
+    }
 
     el.searchFilter.addEventListener('input', filterCompanyList);
     el.btnSelectAll.addEventListener('click', () => toggleAllSelections(true));
@@ -599,7 +660,7 @@ function showToast(message, type = 'info', duration = 3500) {
 
 async function loadSettings() {
     try {
-        const response = await fetch('/api/settings');
+        const response = await authFetch('/api/settings');
         const s = await response.json();
         state.settings = s;
     } catch (err) {
@@ -609,9 +670,8 @@ async function loadSettings() {
 
 async function saveSettings() {
     try {
-        await fetch('/api/settings', {
+        await authFetch('/api/settings', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(state.settings),
         });
     } catch (err) {
@@ -641,7 +701,7 @@ async function pickFolder() {
 }
 
 // ------------------------------------------------------------------ #
-// Folder Scanner (replaces GET /api/scan)
+// Folder Scanner
 // ------------------------------------------------------------------ #
 
 async function scanFolder() {
@@ -652,6 +712,7 @@ async function scanFolder() {
 
     showStatus('Scanning folder...');
     el.btnScan.disabled = true;
+    state.syncFired = false;  // reset sync guard for new scan
 
     try {
         const prevCompanies = state.companies;
@@ -733,10 +794,9 @@ async function readCompanyFile(filename, force = false) {
     }
 
     try {
-        // Load saved mappings for tier 2 extraction (best-effort, no block on failure)
         let savedMappings = {};
         try {
-            const r = await fetch(`/api/mappings?filename=${encodeURIComponent(filename)}`);
+            const r = await authFetch(`/api/mappings?filename=${encodeURIComponent(filename)}`);
             const j = await r.json();
             savedMappings = j.mappings || {};
         } catch (_) {}
@@ -826,8 +886,253 @@ function updateParsingProgress() {
         }
         el.btnModePeople.classList.remove('disabled');
         rebuildKnowledgeGraph();
+
+        // Auto-sync to cloud once all files are loaded (once per scan)
+        if (!state.syncFired) {
+            state.syncFired = true;
+            runAutoSync();
+        }
     }
 }
+
+// ------------------------------------------------------------------ #
+// Auto-Sync to Supabase
+// ------------------------------------------------------------------ #
+
+async function runAutoSync() {
+    if (!window.__clerk || !window.__clerk.session) return;
+
+    const companies = Object.values(state.companies)
+        .filter(c => c.data)
+        .map(c => ({
+            filename:            c.filename,
+            company_name:        c.data.company_name || '',
+            reg_no:              c.data.reg_no || '',
+            address:             c.data.address || '',
+            financial_year_end:  c.data.financial_year_end || '',
+            agm_number:          c.data.agm_number || '',
+            agm_date:            c.data.agm_date || '',
+            all_directors:       c.data.all_directors || [],
+            selected_directors:  c.data.selected_directors || [],
+        }));
+
+    if (companies.length === 0) return;
+
+    try {
+        // Phase 1: preview diffs (no DB write yet)
+        const previewRes = await authFetch('/api/sync', {
+            method: 'POST',
+            body: JSON.stringify({ companies }),
+        });
+        if (!previewRes.ok) return;
+        const { diffs, total } = await previewRes.json();
+
+        if (diffs.length === 0) {
+            // No changes — confirm immediately without user interaction
+            await authFetch('/api/sync/confirm', {
+                method: 'POST',
+                body: JSON.stringify({
+                    companies,
+                    user_name: window.__clerk.user ? (window.__clerk.user.fullName || '') : '',
+                }),
+            });
+            showToast(`Synced ${total} companies — no changes`, 'success', 2500);
+        } else {
+            showDiffModal(diffs, companies);
+        }
+    } catch (err) {
+        // Sync is best-effort — never block the user
+        console.warn('Auto-sync failed:', err);
+    }
+}
+
+const _DIFF_FIELD_LABELS = {
+    company_name:       'Company Name',
+    reg_no:             'UEN / Reg No',
+    address:            'Address',
+    financial_year_end: 'Financial Year End',
+    agm_number:         'AGM Number',
+    agm_date:           'AGM Date',
+    directors:          'Directors',
+};
+
+function showDiffModal(diffs, allCompanies) {
+    const modal = document.getElementById('sync-diff-modal');
+    const body = document.getElementById('sync-diff-body');
+    if (!modal || !body) return;
+
+    const plural = diffs.length === 1 ? 'company record has' : 'company records have';
+    body.innerHTML = `
+        <p style="margin-bottom:16px;color:var(--text-secondary);">
+            ${diffs.length} ${plural} changed since last sync.
+        </p>
+        ${diffs.map(diff => `
+            <div class="diff-company-block">
+                <h4 class="diff-company-name">${diff.company_name}</h4>
+                <table class="diff-table">
+                    <thead>
+                        <tr><th>Field</th><th class="diff-old-col">Before</th><th class="diff-new-col">After</th></tr>
+                    </thead>
+                    <tbody>
+                        ${diff.changes.map(ch => `
+                            <tr>
+                                <td>${_DIFF_FIELD_LABELS[ch.field] || ch.field}</td>
+                                <td class="diff-old">${ch.old || '<em>empty</em>'}</td>
+                                <td class="diff-new">${ch.new || '<em>empty</em>'}</td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>`).join('')}`;
+
+    modal.style.display = 'flex';
+    lucide.createIcons();
+
+    document.getElementById('btn-sync-confirm').onclick = async () => {
+        modal.style.display = 'none';
+        try {
+            await authFetch('/api/sync/confirm', {
+                method: 'POST',
+                body: JSON.stringify({
+                    companies: allCompanies,
+                    user_name: window.__clerk.user ? (window.__clerk.user.fullName || '') : '',
+                }),
+            });
+            showToast(`Cloud data updated for ${allCompanies.length} companies`, 'success');
+        } catch (err) {
+            showToast('Failed to update cloud data', 'error');
+        }
+    };
+
+    document.getElementById('btn-sync-cancel').onclick = () => {
+        modal.style.display = 'none';
+        showToast('Cloud update skipped — local data unchanged', 'info');
+    };
+
+    document.getElementById('btn-close-diff-modal').onclick = () => {
+        modal.style.display = 'none';
+    };
+}
+
+// ------------------------------------------------------------------ #
+// Mobile View
+// ------------------------------------------------------------------ #
+
+let _mobileCompaniesCache = [];
+
+async function loadMobileView() {
+    const listEl = document.getElementById('mobile-company-list');
+    try {
+        const res = await authFetch('/api/companies');
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const { companies } = await res.json();
+        _mobileCompaniesCache = companies || [];
+        updateMobileSyncBanner(_mobileCompaniesCache);
+        renderMobileCards(_mobileCompaniesCache, '');
+    } catch (err) {
+        console.error('loadMobileView error:', err);
+        if (listEl) {
+            listEl.innerHTML = `<p style="padding:20px;color:var(--color-error);">Failed to load: ${err.message}</p>`;
+        }
+    }
+}
+
+function updateMobileSyncBanner(companies) {
+    const banner = document.getElementById('mobile-sync-banner');
+    if (!banner || !companies.length) return;
+
+    const latest = companies.reduce((a, b) =>
+        new Date(a.last_scanned_at) > new Date(b.last_scanned_at) ? a : b
+    );
+
+    if (!latest.last_scanned_at) {
+        banner.textContent = 'No sync data yet';
+        return;
+    }
+
+    const d = new Date(latest.last_scanned_at);
+    const date = d.toLocaleDateString('en-SG', {
+        day: 'numeric', month: 'short', year: 'numeric',
+    });
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const name = latest.last_scanned_by_name || '';
+    banner.textContent = name
+        ? `Last synced by ${name} on ${date} at ${hh}:${mm}`
+        : `Last synced on ${date} at ${hh}:${mm}`;
+}
+
+function renderMobileCards(companies, query) {
+    const listEl = document.getElementById('mobile-company-list');
+    if (!listEl) return;
+
+    const q = (query || '').toLowerCase().trim();
+    const filtered = q
+        ? companies.filter(c =>
+            (c.company_name || '').toLowerCase().includes(q) ||
+            (c.reg_no || '').toLowerCase().includes(q))
+        : companies;
+
+    if (filtered.length === 0) {
+        listEl.innerHTML = q
+            ? `<p style="padding:20px;color:var(--text-muted);text-align:center;">No companies match "${query}".</p>`
+            : '<p style="padding:20px;color:var(--text-muted);text-align:center;">No company data synced yet. Scan a folder from the desktop app.</p>';
+        return;
+    }
+
+    listEl.innerHTML = filtered.map((c, idx) => `
+        <div class="mobile-card" id="mobile-card-${idx}">
+            <div class="mobile-card-header" onclick="toggleMobileCard(${idx})">
+                <div>
+                    <div class="mobile-card-title">${c.company_name || c.filename || 'Unnamed'}</div>
+                    <div class="mobile-card-uen">${c.reg_no || '—'}</div>
+                </div>
+                <i data-lucide="chevron-down" class="mobile-card-chevron" id="chevron-${idx}"></i>
+            </div>
+            <div class="mobile-card-body" id="mobile-card-body-${idx}" style="display:none">
+                <div class="mobile-field"><strong>Address:</strong><span>${c.address || '—'}</span></div>
+                <div class="mobile-field"><strong>Financial Year End:</strong><span>${c.financial_year_end || '—'}</span></div>
+                <div class="mobile-field"><strong>AGM:</strong><span>${_agmLabel(c)}</span></div>
+                <div class="mobile-field mobile-field-directors">
+                    <strong>Directors:</strong>
+                    <ul class="mobile-directors-list">
+                        ${(c.directors || []).map(d => `<li>• ${d}</li>`).join('') || '<li style="color:var(--text-muted)">None recorded</li>'}
+                    </ul>
+                </div>
+            </div>
+        </div>`).join('');
+
+    lucide.createIcons();
+}
+
+function toggleMobileCard(idx) {
+    const body = document.getElementById(`mobile-card-body-${idx}`);
+    const chevron = document.getElementById(`chevron-${idx}`);
+    if (!body) return;
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : 'block';
+    if (chevron) {
+        chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+    }
+}
+
+function _agmLabel(c) {
+    const n = parseInt(c.agm_number || '0');
+    const suffix = n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th';
+    const num = n ? `${n}${suffix} AGM` : '';
+    const date = c.agm_date || '';
+    if (num && date) return `${num} — ${date}`;
+    return num || date || '—';
+}
+
+// Wire up mobile search
+document.addEventListener('DOMContentLoaded', () => {
+    const mobileSearch = document.getElementById('mobile-search');
+    if (mobileSearch) {
+        mobileSearch.addEventListener('input', (e) => {
+            renderMobileCards(_mobileCompaniesCache, e.target.value);
+        });
+    }
+});
 
 // ------------------------------------------------------------------ #
 // Knowledge Graph Engine
@@ -1474,7 +1779,7 @@ async function openRotationHistory() {
     el.historyTableBody.innerHTML = '';
 
     try {
-        const response = await fetch(`/api/history?reg_no=${encodeURIComponent(reg_no)}&fy_year=${encodeURIComponent(fy_year)}`);
+        const response = await authFetch(`/api/history?reg_no=${encodeURIComponent(reg_no)}&fy_year=${encodeURIComponent(fy_year)}`);
         const data = await response.json();
         if (data.error) throw new Error(data.error);
         renderHistoryRows(data.history);
@@ -1552,9 +1857,13 @@ async function runGeneration() {
     };
 
     try {
+        const token = await window.__clerk.session.getToken();
         const response = await fetch('/api/generate', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
             body: JSON.stringify(payload),
         });
 
@@ -1563,7 +1872,6 @@ async function runGeneration() {
             throw new Error(errData.error || 'Pipeline execution failed.');
         }
 
-        // Receive zip as binary download
         const blob = await response.blob();
         const disposition = response.headers.get('Content-Disposition') || '';
         const nameMatch = disposition.match(/filename="?([^"]+)"?/);
