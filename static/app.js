@@ -418,6 +418,45 @@ function initMobileOrDesktop() {
             setTimeout(() => splash.remove(), 600);
         }
 
+        // Mobile tab toggle
+        const tabCompanies = document.getElementById('mobile-tab-companies');
+        const tabPeople = document.getElementById('mobile-tab-people');
+        const mobileCompanyList = document.getElementById('mobile-company-list');
+        const mobilePeopleList = document.getElementById('mobile-people-list');
+        const mobileSearch = document.getElementById('mobile-search');
+
+        if (tabCompanies && tabPeople) {
+            tabCompanies.addEventListener('click', () => {
+                _mobileViewMode = 'companies';
+                tabCompanies.classList.add('active');
+                tabPeople.classList.remove('active');
+                mobileCompanyList.style.display = '';
+                mobilePeopleList.style.display = 'none';
+                if (mobileSearch) mobileSearch.placeholder = 'Search companies or UEN...';
+            });
+
+            tabPeople.addEventListener('click', () => {
+                _mobileViewMode = 'people';
+                tabPeople.classList.add('active');
+                tabCompanies.classList.remove('active');
+                mobileCompanyList.style.display = 'none';
+                mobilePeopleList.style.display = '';
+                if (mobileSearch) mobileSearch.placeholder = 'Search directors...';
+                renderMobilePeople(mobileSearch ? mobileSearch.value : '');
+            });
+        }
+
+        // Wire mobile search to active tab
+        if (mobileSearch) {
+            mobileSearch.addEventListener('input', (e) => {
+                if (_mobileViewMode === 'people') {
+                    renderMobilePeople(e.target.value);
+                } else {
+                    renderMobileCards(_mobileCompaniesCache, e.target.value);
+                }
+            });
+        }
+
         loadMobileView();
     } else {
         // Desktop: boot normally
@@ -1050,6 +1089,8 @@ function showDiffModal(diffs, allCompanies) {
 // ------------------------------------------------------------------ #
 
 let _mobileCompaniesCache = [];
+let _mobilePeopleCache = {};   // { [directorName]: companyName[] }
+let _mobileViewMode = 'companies'; // 'companies' | 'people'
 
 async function loadMobileView() {
     const listEl = document.getElementById('mobile-company-list');
@@ -1058,14 +1099,81 @@ async function loadMobileView() {
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
         const { companies } = await res.json();
         _mobileCompaniesCache = companies || [];
+        _mobilePeopleCache = buildMobilePeopleIndex(_mobileCompaniesCache);
         updateMobileSyncBanner(_mobileCompaniesCache);
-        renderMobileCards(_mobileCompaniesCache, '');
+        if (_mobileViewMode === 'people') {
+            renderMobilePeople(document.getElementById('mobile-search')?.value || '');
+        } else {
+            renderMobileCards(_mobileCompaniesCache, '');
+        }
     } catch (err) {
         console.error('loadMobileView error:', err);
         if (listEl) {
             listEl.innerHTML = `<p style="padding:20px;color:var(--color-error);">Failed to load: ${err.message}</p>`;
         }
     }
+}
+
+function buildMobilePeopleIndex(companies) {
+    const index = {};
+    companies.forEach(c => {
+        const cName = c.company_name || c.filename || 'Unnamed';
+        (c.directors || []).forEach(dir => {
+            const name = (dir || '').trim();
+            if (!name) return;
+            if (!index[name]) index[name] = [];
+            if (!index[name].includes(cName)) index[name].push(cName);
+        });
+    });
+    return index;
+}
+
+function renderMobilePeople(query) {
+    const listEl = document.getElementById('mobile-people-list');
+    if (!listEl) return;
+
+    const q = (query || '').toLowerCase().trim();
+    const sortedNames = Object.keys(_mobilePeopleCache).sort((a, b) => a.localeCompare(b));
+
+    const filtered = q
+        ? sortedNames.filter(name =>
+            name.toLowerCase().includes(q) ||
+            (_mobilePeopleCache[name] || []).some(c => c.toLowerCase().includes(q)))
+        : sortedNames;
+
+    if (filtered.length === 0) {
+        listEl.innerHTML = `
+            <div class="mobile-loading">
+                <p>${q ? `No directors matching "${query}"` : 'No directors found. Sync companies first.'}</p>
+            </div>`;
+        return;
+    }
+
+    listEl.innerHTML = filtered.map((name, idx) => {
+        const companies = _mobilePeopleCache[name] || [];
+        const count = companies.length === 1 ? '1 company' : `${companies.length} companies`;
+        return `
+            <div class="mobile-person-item" id="mperson-${idx}">
+                <div class="mobile-person-header" onclick="toggleMobilePerson(${idx})">
+                    <span class="mobile-person-name">${name}</span>
+                    <span class="mobile-person-count">${count}</span>
+                    <i data-lucide="chevron-down" class="mobile-person-chevron" id="mpchevron-${idx}"></i>
+                </div>
+                <div class="mobile-person-companies" id="mpcompanies-${idx}">
+                    ${companies.map(c => `<div class="mobile-person-company">${c}</div>`).join('')}
+                </div>
+            </div>`;
+    }).join('');
+    lucide.createIcons();
+}
+
+function toggleMobilePerson(idx) {
+    const body = document.getElementById(`mpcompanies-${idx}`);
+    const chevron = document.getElementById(`mpchevron-${idx}`);
+    if (!body) return;
+    const isOpen = body.style.display === 'block';
+    body.style.display = isOpen ? 'none' : 'block';
+    if (chevron) chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
 }
 
 function updateMobileSyncBanner(companies) {
@@ -1156,15 +1264,6 @@ function _agmLabel(c) {
     return num || date || '—';
 }
 
-// Wire up mobile search
-document.addEventListener('DOMContentLoaded', () => {
-    const mobileSearch = document.getElementById('mobile-search');
-    if (mobileSearch) {
-        mobileSearch.addEventListener('input', (e) => {
-            renderMobileCards(_mobileCompaniesCache, e.target.value);
-        });
-    }
-});
 
 // ------------------------------------------------------------------ #
 // Knowledge Graph Engine

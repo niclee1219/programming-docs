@@ -356,6 +356,14 @@
         <img src="/static/logo_white.png" id="mobile-logo" class="logo-img" alt="AGM Logo" />
         <div id="mobile-sync-banner" class="mobile-sync-banner">Loading...</div>
       </div>
+      <div class="mobile-tab-toggle">
+        <button id="mobile-tab-companies" class="mobile-tab-btn active">
+          <i data-lucide="building"></i> Companies
+        </button>
+        <button id="mobile-tab-people" class="mobile-tab-btn">
+          <i data-lucide="users"></i> People
+        </button>
+      </div>
       <div class="mobile-search-bar">
         <input type="text" id="mobile-search" placeholder="Search companies or UEN..." />
       </div>
@@ -365,6 +373,7 @@
           <p>Loading company data...</p>
         </div>
       </div>
+      <div id="mobile-people-list" class="mobile-company-list" style="display:none;"></div>
     </div>
 
     <!-- ── DIRECTOR ROTATION HISTORY MODAL ─────────────────────────────────── -->
