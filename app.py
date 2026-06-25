@@ -28,10 +28,17 @@ load_dotenv()
 app = Flask(__name__)
 
 # ── Supabase client (service role — never exposed to browser) ──────────────── #
-_supabase: SupabaseClient = create_client(
-    os.environ["SUPABASE_URL"],
-    os.environ["SUPABASE_SERVICE_KEY"],
-)
+_supabase: SupabaseClient | None = None
+
+
+def _get_supabase() -> SupabaseClient:
+    global _supabase
+    if _supabase is None:
+        _supabase = create_client(
+            os.environ["SUPABASE_URL"],
+            os.environ["SUPABASE_SERVICE_KEY"],
+        )
+    return _supabase
 
 # ── Clerk JWT verification ─────────────────────────────────────────────────── #
 _jwks_client: PyJWKClient | None = None
@@ -120,7 +127,7 @@ def index():
 def manage_settings():
     uid = _user_id()
     if request.method == "GET":
-        result = _supabase.table("user_settings") \
+        result = _get_supabase().table("user_settings") \
             .select("fy_year") \
             .eq("user_id", uid) \
             .maybe_single() \
@@ -132,7 +139,7 @@ def manage_settings():
     else:
         payload = request.json or {}
         fy_year = payload.get("agm_financial_year", "")
-        _supabase.table("user_settings") \
+        _get_supabase().table("user_settings") \
             .upsert({"user_id": uid, "fy_year": fy_year, "updated_at": datetime.utcnow().isoformat()}, on_conflict="user_id") \
             .execute()
         return jsonify({"success": True})
@@ -147,7 +154,7 @@ def field_mappings():
         filename = request.args.get("filename", "").strip()
         if not filename:
             return jsonify({"error": "filename is required"}), 400
-        result = _supabase.table("field_mappings") \
+        result = _get_supabase().table("field_mappings") \
             .select("field, cell") \
             .eq("user_id", uid) \
             .eq("filename", filename) \
@@ -168,7 +175,7 @@ def field_mappings():
             for field, cell in mappings.items()
         ]
         if rows:
-            _supabase.table("field_mappings") \
+            _get_supabase().table("field_mappings") \
                 .upsert(rows, on_conflict="user_id,filename,field") \
                 .execute()
         return jsonify({"success": True})
@@ -189,7 +196,7 @@ def get_director_history():
         current_year = datetime.now().year - 1
 
     try:
-        history = DirectorHistory(_supabase, uid)
+        history = DirectorHistory(_get_supabase(), uid)
         summary = history.rotation_summary(reg_no, current_year)
         return jsonify({"history": summary})
     except Exception as e:
@@ -206,7 +213,7 @@ def company_profiles():
         doc_type = request.args.get("doc_type", "directors_resolution").strip()
         if not reg_no:
             return jsonify({"error": "reg_no is required"}), 400
-        result = _supabase.table("company_profiles") \
+        result = _get_supabase().table("company_profiles") \
             .select("doc_settings") \
             .eq("org_id", org) \
             .eq("reg_no", reg_no) \
@@ -224,7 +231,7 @@ def company_profiles():
         if not reg_no:
             return jsonify({"error": "reg_no is required"}), 400
 
-        existing = _supabase.table("company_profiles") \
+        existing = _get_supabase().table("company_profiles") \
             .select("doc_settings") \
             .eq("org_id", org) \
             .eq("reg_no", reg_no) \
@@ -234,7 +241,7 @@ def company_profiles():
         settings = (row.get("doc_settings") or {}) if row else {}
         settings[doc_type] = profile
 
-        _supabase.table("company_profiles") \
+        _get_supabase().table("company_profiles") \
             .upsert(
                 {"org_id": org, "reg_no": reg_no, "doc_settings": settings,
                  "updated_at": datetime.utcnow().isoformat()},
@@ -263,7 +270,7 @@ def generate_resolutions():
         return jsonify({"error": "No companies provided."}), 400
 
     generator = AGMGenerator()
-    history = DirectorHistory(_supabase, uid)
+    history = DirectorHistory(_get_supabase(), uid)
 
     zip_buffer = io.BytesIO()
     results = []
@@ -352,7 +359,7 @@ def sync_preview():
         return jsonify({"diffs": [], "total": 0})
 
     filenames = [c["filename"] for c in companies]
-    existing_result = _supabase.table("company_snapshots") \
+    existing_result = _get_supabase().table("company_snapshots") \
         .select("filename, company_name, reg_no, address, financial_year_end, agm_number, agm_date, directors") \
         .eq("org_id", org) \
         .in_("filename", filenames) \
@@ -421,7 +428,7 @@ def sync_confirm():
         })
 
     if rows:
-        _supabase.table("company_snapshots") \
+        _get_supabase().table("company_snapshots") \
             .upsert(rows, on_conflict="org_id,filename") \
             .execute()
 
@@ -433,7 +440,7 @@ def sync_confirm():
 def get_companies():
     """Mobile read: all company snapshots for the active org."""
     org = _org_id()
-    result = _supabase.table("company_snapshots") \
+    result = _get_supabase().table("company_snapshots") \
         .select(
             "filename, company_name, reg_no, address, financial_year_end, "
             "agm_number, agm_date, directors, last_scanned_at, last_scanned_by_name"
